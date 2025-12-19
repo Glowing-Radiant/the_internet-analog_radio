@@ -1,0 +1,35 @@
+name: Sync Repository Description
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'README.md'
+  workflow_dispatch:
+
+jobs:
+  sync-description:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Extract description from README
+        id: extract
+        run: |
+          # Extract the tagline from README.md (line 3: **"Rediscover your music the old way"**)
+          DESCRIPTION=$(sed -n '3p' README.md | sed 's/\*\*//g' | sed 's/"//g' | xargs)
+          echo "description=${DESCRIPTION}" >> $GITHUB_OUTPUT
+          echo "Extracted description: ${DESCRIPTION}"
+      
+      - name: Update repository description
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DESCRIPTION: ${{ steps.extract.outputs.description }}
+        run: |
+          gh repo edit ${{ github.repository }} --description "${DESCRIPTION}"
+          echo "Repository description updated to: ${DESCRIPTION}"
