@@ -12,7 +12,8 @@ jobs:
   sync-description:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
+      metadata: write
     
     steps:
       - name: Checkout repository
@@ -21,8 +22,8 @@ jobs:
       - name: Extract description from README
         id: extract
         run: |
-          # Extract the tagline from README.md (line 3: **"Rediscover your music the old way"**)
-          DESCRIPTION=$(sed -n '3p' README.md | sed 's/\*\*//g' | sed 's/"//g' | xargs)
+          # Extract the first quoted text from README.md (the tagline)
+          DESCRIPTION=$(grep -o '"[^"]*"' README.md | head -1 | sed 's/"//g')
           echo "description=${DESCRIPTION}" >> $GITHUB_OUTPUT
           echo "Extracted description: ${DESCRIPTION}"
       
