@@ -3,7 +3,7 @@ import sys
 import os
 import random
 from core.static_generator import StaticGenerator
-
+import threading
 
 class EventController:
     def __init__(self, station_manager, favorites_manager, stream_player, renderer, accessibility_manager=None):
@@ -21,13 +21,9 @@ class EventController:
         self.band_indices = {b: 0 for b in self.bands}
         
         self.current_frequency = 88.0
-        self.current_frequency = 88.0
         # Widen bandwidth to 0.4 MHz (radius)
         # This gives a zero-crossing at +/- 0.4
-        # At +/- 0.2 (2 steps away), signal is 0.5 (50/50 mix) -- Desired Edge
-        # Total "hearing" width is 0.8, but "good" range is ~0.5
         self.tuning_bandwidth = 0.4 
-        self.static_generator = StaticGenerator()
         self.static_generator = StaticGenerator()
         
         self.is_muted = False
@@ -49,9 +45,6 @@ class EventController:
     def run(self):
         clock = pygame.time.Clock()
         
-        # Initial play handled by storage/scanning loop
-        # self._play_current_station()
-
         while self.running:
             self._handle_events()
             if not self.input_mode:
@@ -134,6 +127,33 @@ class EventController:
             self.input_text = ""
             if self.accessibility_manager:
                 self.accessibility_manager.speak("Enter Stream URL")
+        elif key == pygame.K_w:
+            # Now Playing
+            meta = self.stream_player.get_now_playing()
+            print(f"Now Playing: {meta}")
+            if self.accessibility_manager:
+                self.accessibility_manager.speak(f"Now Playing: {meta}")
+        elif key == pygame.K_c:
+            # Copy URL
+            closest_station, _ = self._get_closest_station()
+            if closest_station:
+                url = closest_station.get('url_resolved', '')
+                if url:
+                    try:
+                        import tkinter
+                        r = tkinter.Tk()
+                        r.withdraw()
+                        r.clipboard_clear()
+                        r.clipboard_append(url)
+                        r.update() # Enable clipboard update
+                        r.destroy()
+                        print(f"Copied to clipboard: {url}")
+                        if self.accessibility_manager:
+                            self.accessibility_manager.speak("URL Copied")
+                    except Exception as e:
+                        print(f"Clipboard error: {e}")
+                        if self.accessibility_manager:
+                            self.accessibility_manager.speak("Copy Failed")
 
     def _submit_search(self):
         print(f"Searching for: {self.input_text}")
@@ -141,22 +161,27 @@ class EventController:
             self.accessibility_manager.speak(f"Searching for {self.input_text}")
         
         self.last_search_query = self.input_text
-        self.station_manager.search_stations(self.input_text)
-        
-        # Check if results found
-        if not self.station_manager.get_station_list('exploratory'):
-             print("Nothing found.")
-             if self.accessibility_manager:
-                 self.accessibility_manager.speak("Nothing found")
-             return
+        query = self.input_text
 
-        # Switch to exploratory band
-        if 'exploratory' in self.bands:
-            self.current_band_index = self.bands.index('exploratory')
-            self.band_indices['exploratory'] = 0
-            self._play_current_station()
-            if self.accessibility_manager:
-                self.accessibility_manager.speak("Exploratory Band")
+        def search_thread():
+            self.station_manager.search_stations(query)
+            
+            # Post-search checks
+            stations = self.station_manager.get_station_list('exploratory')
+            if not stations:
+                 print("Nothing found.")
+                 if self.accessibility_manager:
+                     self.accessibility_manager.speak("Nothing found")
+                 return
+
+            # Switch to exploratory band
+            if 'exploratory' in self.bands:
+                self.current_band_index = self.bands.index('exploratory')
+                self.band_indices['exploratory'] = 0
+                if self.accessibility_manager:
+                    self.accessibility_manager.speak("Exploratory Band")
+        
+        threading.Thread(target=search_thread, daemon=True).start()
 
     def _save_custom_band(self):
         # Only allow saving from exploratory band if it has stations
@@ -182,47 +207,34 @@ class EventController:
         station_vol = 0.0
         static_vol = 1.0
         
-        # Update Drift Logic (Global now)
-        if not hasattr(self, '_last_freq'): self._last_freq = self.current_frequency
-        if not hasattr(self, '_drift_level'): self._drift_level = 0.0
+        # systematic static logic:
+        # < 0.1: Locked (Clear Signal)
+        # 0.1 - 0.4: Fading
+        # > 0.4: Lost (Static)
         
-        if abs(self.current_frequency - self._last_freq) > 0.01:
-            self._drift_level = 0.0
-            self._last_freq = self.current_frequency
-        else:
-             if distance < 0.05:
-                if random.random() < 0.01:
-                     self._drift_level = min(0.3, self._drift_level + 0.05)
-
         band_width = self.tuning_bandwidth # 0.4
+        current_station_url = None
         
         if closest_station and distance < band_width:
-            url = closest_station.get('url_resolved')
+            current_station_url = closest_station.get('url_resolved')
             
-            # ZONES
-            if distance < 0.05:
-                # CENTER
-                drift_static = 0.0
-                if random.random() < 0.05: drift_static = self._drift_level
-                station_vol = 1.0
-                static_vol = drift_static
-                
-            elif distance < 0.2:
-                # NEAR
+            if distance < 0.1:
+                # LOCKED - Perfect Signal
                 station_vol = 1.0
                 static_vol = 0.0
-                if random.random() < 0.05:
-                     static_vol = random.uniform(0.05, 0.2)
-                     
+                
             elif distance < 0.4:
-                # EDGE (0.2 - 0.4)
-                # Linear fade
-                norm = (distance - 0.2) / 0.2
+                # FADING - Linear Crossfade
+                # Normalize distance from 0.1 to 0.4 -> 0.0 to 1.0
+                norm = (distance - 0.1) / 0.3
                 station_vol = 1.0 - norm
                 static_vol = norm
-                if 0.35 < distance < 0.45:
-                    static_vol = max(static_vol, 0.5)
             
+            else:
+                # Should not happen given outer if, but safety
+                station_vol = 0.0
+                static_vol = 1.0
+
             # Apply Master / Mute
             if not hasattr(self, 'user_volume'): self.user_volume = 0.5
             
@@ -237,9 +249,18 @@ class EventController:
                  final_static_vol = 0.0
 
             # 3. Control Stream Player
-            if url:
-                self.stream_player.play(url)
+            # Only play if URL is valid and volume is audible
+            if current_station_url and final_station_vol > 0:
+                self.stream_player.play(current_station_url)
                 self.stream_player.set_volume(final_station_vol)
+            else:
+                # If signal is weak/gone, ensure player is paused/muted?
+                # Actually, if we are in fade zone, we want it playing.
+                # If station_vol is 0 (unlikely inside bandwidth check unless user_vol is 0),
+                # we just keep it running or set volume.
+                 if current_station_url:
+                     self.stream_player.play(current_station_url)
+                     self.stream_player.set_volume(final_station_vol)
 
             # Announce
             if station_vol > 0.5:
@@ -258,7 +279,7 @@ class EventController:
                  final_static_vol = 0.0
             else:
                  final_static_vol = 1.0 * getattr(self, 'user_volume', 0.5) * 0.15
-
+                 
         self.static_generator.set_volume(final_static_vol)
 
     def _get_closest_station(self):

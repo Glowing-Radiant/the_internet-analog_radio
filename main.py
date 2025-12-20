@@ -60,9 +60,17 @@ def main():
     lon = region_info.get('lon') if region_info else None
     
     station_manager = StationManager(config_manager)
-    print("Fetching stations...")
-    station_manager.fetch_all(country_code, city, lat, lon)
-    print("Stations fetched.")
+    station_manager = StationManager(config_manager)
+    
+    # Threaded Fetch
+    import threading
+    def fetch_async():
+        print("Fetching stations in background...")
+        station_manager.fetch_all(country_code, city, lat, lon)
+        print("Stations fetched.")
+        
+    fetch_thread = threading.Thread(target=fetch_async, daemon=True)
+    fetch_thread.start()
     
     favorites_manager = FavoritesManager(config_manager)
     stream_player = StreamPlayer()

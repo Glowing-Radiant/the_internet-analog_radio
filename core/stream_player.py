@@ -36,6 +36,8 @@ class StreamPlayer:
             self.player.audio_set_volume(0) # Start silent
             self.player.play()
             self.current_url = url
+            # Reset volume tracking so next set_volume works effectively
+            self._last_set_volume = 0
             
         except Exception as e:
             print(f"Error creating stream for {url}: {e}")
@@ -47,6 +49,12 @@ class StreamPlayer:
         """
         vol = int(max(0.0, min(1.0, volume)) * 100)
         
+        # Optimization: Don't spam VLC if volume hasn't effectively changed
+        if hasattr(self, '_last_set_volume') and self._last_set_volume == vol:
+            return
+            
+        self._last_set_volume = vol
+
         # Use mute for 0
         if vol == 0:
             if not self.player.audio_get_mute():
@@ -55,7 +63,8 @@ class StreamPlayer:
             if self.player.audio_get_mute():
                 self.player.audio_set_mute(False)
             
-            # Update only if changed
+            # Update only if changed (double check against VLC internal state occasionally?)
+            # Actually trusting our cache is better for perf, VLC calls are C-types overhead.
             if self.player.audio_get_volume() != vol:
                 self.player.audio_set_volume(vol)
 
@@ -68,6 +77,30 @@ class StreamPlayer:
 
     def is_playing(self):
         return self.player.is_playing()
+
+    def get_now_playing(self):
+        """
+        Returns the current metadata (Now Playing) if available.
+        """
+        if not self.player.get_media():
+            return "Unknown"
+            
+        media = self.player.get_media()
+        # vlc.Meta.NowPlaying is enum 12
+        now_playing = media.get_meta(12) 
+        if now_playing:
+            return now_playing
+            
+        # Fallback to Title/Artist
+        title = media.get_meta(0) # Title
+        artist = media.get_meta(1) # Artist
+        
+        if title and artist:
+            return f"{artist} - {title}"
+        if title:
+            return title
+            
+        return "Unknown"
 
     def update(self):
         pass

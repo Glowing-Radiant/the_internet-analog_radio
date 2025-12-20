@@ -3,8 +3,9 @@ import random
 
 class StationManager:
     def __init__(self, config_manager=None):
-        self.base_url = self._find_server()
-        print(f"Using API Server: {self.base_url}")
+        # Default server to avoid blocking start
+        self.base_url = "https://de1.api.radio-browser.info/json/stations"
+        print(f"Using default API Server: {self.base_url}")
         
         self.config_manager = config_manager
         self.stations = {
@@ -13,7 +14,6 @@ class StationManager:
             'international': [],
             'exploratory': []
         }
-        self.config_manager = config_manager
         
         # Load Cache
         self.cache_file = "stations_cache.json"
@@ -21,7 +21,25 @@ class StationManager:
 
         self.custom_bands = {}
         if self.config_manager:
-            self.config_manager.load_json("custom_bands.json", {})
+            # FIX: Assign the loaded data to self.custom_bands
+            self.custom_bands = self.config_manager.load_json("custom_bands.json", {})
+
+    def _ensure_server(self):
+        """
+        Ensures we have a working server. Called from threaded fetch.
+        """
+        # Try current first
+        try:
+             # Construct stats URL correctly
+             # base_url is typically .../json/stations
+             # we want .../json/stats
+             stats_url = self.base_url.replace('/stations', '/stats')
+             requests.get(stats_url, timeout=2)
+             return # Current is good
+        except:
+             print("Current server unreachable, finding new one...")
+             self.base_url = self._find_server()
+             print(f"Switched to: {self.base_url}")
 
     def _find_server(self):
         # List of known servers
@@ -29,26 +47,26 @@ class StationManager:
             "at1.api.radio-browser.info",
             "de1.api.radio-browser.info",
             "fr1.api.radio-browser.info",
-            "nl1.api.radio-browser.info"
+            "nl1.api.radio-browser.info",
+            "all.api.radio-browser.info"
         ]
         random.shuffle(mirrors)
         
-        # Fast check to find a working one
         for host in mirrors:
             try:
                 url = f"https://{host}/json"
-                # Timeout short for checking
                 requests.get(f"{url}/stats", timeout=2)
                 return f"{url}/stations"
             except Exception as e:
                 print(f"Server {host} unreachable: {e}")
                 continue
                 
-        # Fallback
         return "https://de1.api.radio-browser.info/json/stations"
 
-
     def fetch_all(self, country_code=None, city=None, lat=None, lon=None):
+        # This runs in thread, so we can block to find server
+        self._ensure_server()
+        
         if lat and lon:
             self.fetch_local(lat, lon)
         elif city:
@@ -160,7 +178,23 @@ class StationManager:
             response.raise_for_status()
             data = response.json()
             
-            valid_stations = [s for s in data if s.get('url_resolved') and s.get('lastcheckok') == 1]
+            # Relaxed check: some valid stations have null lastcheckok or 0 explicitly but work.
+            # We strictly need url_resolved. 
+            # Only filter out if lastcheckok is explicitly 0 (failed check), 
+            # but maybe that's too aggressive if the check itself is old.
+            # Let's trust url_resolved presence mostly.
+            
+            valid_stations = []
+            for s in data:
+                if not s.get('url_resolved'): continue
+                
+                # If lastcheckok is missing, assume OK. If 0, maybe skip. 
+                # But let's be generous for now to fix empty lists.
+                if 'lastcheckok' in s and s['lastcheckok'] == 0:
+                     continue
+                     
+                valid_stations.append(s)
+                
             random.shuffle(valid_stations)
             
             # Assign frequencies to the selected stations
@@ -202,9 +236,3 @@ class StationManager:
             if 'frequency' not in station:
                 # Just pick one even if it overlaps, best effort
                 station['frequency'] = round(random.uniform(87.5, 108.0), 1)
-
-        # Sort by frequency for easier navigation if we were traversing list,
-        # but we are tuning. However, the station list structure in 'local' etc 
-        # is just a list. The Controller will need to find the "closest" station.
-        # So order in the list doesn't matter for the tuning logic I planned.
-
