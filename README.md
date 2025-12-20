@@ -60,6 +60,8 @@ python main.py
 | **S** | Search for a station (activates Exploratory band) |
 | **F** | Enter a custom Stream URL |
 | **B** | Save current Exploratory search as a Custom Band |
+| **W** | Announce "Now Playing" metadata |
+| **C** | Copy current Station URL to Clipboard |
 | **Q** | Quit Application |
 
 ### Search & Custom Bands

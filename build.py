@@ -20,6 +20,7 @@ args = [
     '--hidden-import=cytolk',
     '--hidden-import=requests',
     '--hidden-import=pygame',
+    '--hidden-import=tkinter',
 ]
 
 
