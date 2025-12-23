@@ -1,0 +1,36 @@
+name: Sync Repository Description
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'README.md'
+  workflow_dispatch:
+
+jobs:
+  sync-description:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      metadata: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Extract description from README
+        id: extract
+        run: |
+          # Extract the first quoted text from README.md (the tagline)
+          DESCRIPTION=$(grep -o '"[^"]*"' README.md | head -1 | sed 's/"//g')
+          echo "description=${DESCRIPTION}" >> $GITHUB_OUTPUT
+          echo "Extracted description: ${DESCRIPTION}"
+      
+      - name: Update repository description
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DESCRIPTION: ${{ steps.extract.outputs.description }}
+        run: |
+          gh repo edit ${{ github.repository }} --description "${DESCRIPTION}"
+          echo "Repository description updated to: ${DESCRIPTION}"
