@@ -17,6 +17,12 @@ The Internet Analog Radio is a minimalist, keyboard-driven internet radio player
 *   **Custom Bands**: Save your search results as permanent bands (e.g., "Jazz", "News").
 *   **Accessibility First**: Fully accessible with screen readers (NVDA, JAWS, Narrator) via `cytolk`.
 *   **Keyboard Control**: Designed for completely mouse-free operation.
+*   **Dual Mode**: Switch between **Radio Mode** (Analog tuning) and **TV Mode** (Direct Channel Indexing).
+
+## TV Mode Features
+*   **Direct Navigation**: Left/Right keys switch channels immediately (CH 1 -> CH 2).
+*   **Clean Audio**: No static noise simulation in TV mode.
+*   **Auto-Country**: Automatically finds National TV channels for your location.
 
 ## Requirements
 
@@ -50,10 +56,13 @@ python main.py
 
 | Key | Action |
 | :--- | :--- |
-| **Left / Right** | Tune Station (Hold for fast seek) |
-| **Up / Down** | Volume Control |
+| **Right Arrow** | Radio: Tune Up (+0.1 MHz). Hold for smooth tuning. <br> TV: Next Channel (CH +1). |
+| **Left Arrow** | Radio: Tune Down (-0.1 MHz). Hold for smooth tuning. <br> TV: Prev Channel (CH -1). |
+| **Ctrl + Arrows** | Radio: Scan to next station (Debounced). |
+| **Up / Down** | Volume Control (Time-based smooth adjustment) |
 | **Tab** | Cycle Bands Forward (Local -> National -> ...) |
 | **Shift + Tab** | Cycle Bands Backward |
+| **Ctrl + Tab** | **Switch Mode (Radio / TV)** |
 | **+ (Plus)** | Add current station to Favorites |
 | **- (Minus)** | Remove current station from Favorites |
 | **M** | Toggle Mute |

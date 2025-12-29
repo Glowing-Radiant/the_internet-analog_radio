@@ -15,6 +15,9 @@ config/*.json
 traceback.log
 debug_log.txt
 debug_*.py
+verify_*.py
+val_*.py
+reproduce_crash.py
 test_*.py
 *.spec
 dist/
@@ -23,3 +26,4 @@ repomix-output.txt
 prd.txt
 .radio/
 build_log.txt
+        

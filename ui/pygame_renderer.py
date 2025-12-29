@@ -34,9 +34,20 @@ class PygameRenderer:
     def render(self, state):
         self.screen.fill(self.colors['bg'])
         
+        # Mode Logic
+        mode = state.get('mode', 'radio')
+        if mode == 'tv':
+            self.colors['accent'] = (0, 200, 255) # Cyan for TV
+        else:
+            self.colors['accent'] = (255, 165, 0) # Orange for Radio
+            
         # Draw Header
         self._draw_text("The Internet Analog Radio", self.font_large, self.colors['accent'], (20, 20))
-        self._draw_text("Rediscover your music the old way", self.font_tagline, self.colors['text_dim'], (20, 60))
+        tagline = "Rediscover your music the old way" if mode == 'radio' else "Broadcast Television (Audio Only)"
+        self._draw_text(tagline, self.font_tagline, self.colors['text_dim'], (20, 60))
+        
+        # Draw Mode Indicator
+        self._draw_text(f"MODE: {mode.upper()}", self.font_small, self.colors['accent'], (650, 20))
         
         # Draw Main Display (Adjusted Y position)
         self._draw_main_display(state)
@@ -47,8 +58,9 @@ class PygameRenderer:
         # Draw Volume
         self._draw_volume(state)
         
-        # Draw Dial (Visual flair)
-        self._draw_dial(state)
+        # Draw Dial (Visual flair) - Only for Radio
+        if mode == 'radio':
+            self._draw_dial(state)
 
         # Draw Input Modal if active
         if state.get('input_mode'):
@@ -88,13 +100,24 @@ class PygameRenderer:
 
     def _draw_main_display(self, state):
         station = state.get('current_station')
-        frequency = state.get('frequency', 88.0)
+        mode = state.get('mode', 'radio')
         
         # Shifted down slightly to accommodate tagline
         y_offset = 30 
         
-        freq_text = f"{frequency:.1f} MHz"
-        self._draw_text(freq_text, self.font_large, self.colors['accent'], (50, 60 + y_offset))
+        if mode == 'radio':
+            frequency = state.get('frequency', 88.0)
+            main_text = f"{frequency:.1f} MHz"
+        else:
+            # TV Mode
+            idx = state.get('channel_index', 1)
+            total = state.get('total_channels', 0)
+            if total > 0:
+                main_text = f"CH {idx} / {total}"
+            else:
+                 main_text = "Scanning..."
+        
+        self._draw_text(main_text, self.font_large, self.colors['accent'], (50, 60 + y_offset))
         
         if station:
             name = station.get('name', 'Unknown Station')
@@ -104,7 +127,10 @@ class PygameRenderer:
             self._draw_text(name, self.font_medium, self.colors['text_main'], (50, 110 + y_offset))
             self._draw_text(f"{country} | {bitrate}", self.font_small, self.colors['text_dim'], (50, 150 + y_offset))
         else:
-            self._draw_text("Static...", self.font_medium, self.colors['text_dim'], (50, 110 + y_offset))
+            if mode == 'radio':
+                self._draw_text("Static...", self.font_medium, self.colors['text_dim'], (50, 110 + y_offset))
+            else:
+                 self._draw_text("No Signal / Loading...", self.font_medium, self.colors['text_dim'], (50, 110 + y_offset))
 
     def _draw_panel_indicator(self, state):
         panel = state.get('active_panel', 'explore')

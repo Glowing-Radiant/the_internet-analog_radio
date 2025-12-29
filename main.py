@@ -59,8 +59,7 @@ def main():
     lat = region_info.get('lat') if region_info else None
     lon = region_info.get('lon') if region_info else None
     
-    station_manager = StationManager(config_manager)
-    station_manager = StationManager(config_manager)
+    station_manager = StationManager(config_manager, region_detector)
     
     # Threaded Fetch
     import threading
@@ -91,4 +90,13 @@ def main():
     controller.run()
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        print("CRITICAL ERROR IN MAIN:")
+        import traceback
+        traceback.print_exc()
+        
+        # Keep window open if console
+        print("Press Enter to Exit...")
+        input()

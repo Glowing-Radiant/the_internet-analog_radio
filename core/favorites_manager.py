@@ -4,15 +4,36 @@ import random
 class FavoritesManager:
     def __init__(self, config_manager: ConfigManager):
         self.config_manager = config_manager
-        self.favorites = self.config_manager.load_json("favorites.json", default=[])
-        self._ensure_frequencies()
-        self.current_index = 0
-
-    def _ensure_frequencies(self):
-        import random
-        used_freqs = set(s.get('frequency') for s in self.favorites if s.get('frequency'))
         
-        for station in self.favorites:
+        # Load raw data
+        raw_data = self.config_manager.load_json("favorites.json", default={'radio': [], 'tv': []})
+        
+        # Migration: If it's a list, it's the old format (radio only)
+        if isinstance(raw_data, list):
+            self.favorites = {
+                'radio': raw_data,
+                'tv': []
+            }
+        else:
+            self.favorites = raw_data
+            
+        # Ensure keys exist if partial dict loaded
+        if 'radio' not in self.favorites: self.favorites['radio'] = []
+        if 'tv' not in self.favorites: self.favorites['tv'] = []
+            
+        self._ensure_frequencies_all()
+        self.current_indices = {'radio': 0, 'tv': 0}
+
+    def _ensure_frequencies_all(self):
+        for mode in self.favorites:
+            self._ensure_frequencies(mode)
+
+    def _ensure_frequencies(self, mode):
+        import random
+        fav_list = self.favorites[mode]
+        used_freqs = set(s.get('frequency') for s in fav_list if s.get('frequency'))
+        
+        for station in fav_list:
             if 'frequency' not in station:
                 # Assign unique freq with spacing
                 for _ in range(50):
@@ -34,54 +55,43 @@ class FavoritesManager:
         # Save back to ensure persistence
         self.save_favorites()
 
-    def add_favorite(self, station):
+    def add_favorite(self, station, mode='radio'):
         """
         Adds a station to favorites if not already present.
         Station must be a dict with at least 'url_resolved' and 'name'.
         """
         if not station or 'url_resolved' not in station:
             return False
+            
+        target_list = self.favorites.get(mode)
+        if target_list is None: return False
         
         # Check for duplicates based on URL
-        for fav in self.favorites:
+        for fav in target_list:
             if fav['url_resolved'] == station['url_resolved']:
                 return False
         
-        self.favorites.append(station)
+        target_list.append(station)
+        self._ensure_frequencies(mode) # Ensure freq assigned immediately
         self.save_favorites()
         return True
 
     def save_favorites(self):
         self.config_manager.save_json("favorites.json", self.favorites)
 
-    def remove_favorite(self, station):
+    def remove_favorite(self, station, mode='radio'):
+        target_list = self.favorites.get(mode)
+        if target_list is None: return False
+
         # Remove by URL or Name
-        initial_len = len(self.favorites)
-        self.favorites = [s for s in self.favorites if s.get('url_resolved') != station.get('url_resolved')]
+        initial_len = len(target_list)
+        self.favorites[mode] = [s for s in target_list if s.get('url_resolved') != station.get('url_resolved')]
         
-        if len(self.favorites) < initial_len:
+        if len(self.favorites[mode]) < initial_len:
             self.save_favorites()
             return True
         return False
 
-    def get_favorites(self):
-        return self.favorites
+    def get_favorites(self, mode='radio'):
+        return self.favorites.get(mode, [])
 
-    def next_favorite(self):
-        if not self.favorites:
-            return None
-        self.current_index = (self.current_index + 1) % len(self.favorites)
-        return self.favorites[self.current_index]
-
-    def previous_favorite(self):
-        if not self.favorites:
-            return None
-        self.current_index = (self.current_index - 1) % len(self.favorites)
-        return self.favorites[self.current_index]
-    
-    def get_current_favorite(self):
-        if not self.favorites:
-            return None
-        if self.current_index >= len(self.favorites):
-            self.current_index = 0
-        return self.favorites[self.current_index]
