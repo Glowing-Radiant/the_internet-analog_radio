@@ -88,7 +88,7 @@ The application requires VLC Media Player to be installed on the user's system. 
 ### Viewing Releases
 
 All releases are available on the GitHub Releases page:
-https://github.com/Glowing-Radiant/the_internet-analog_radio/releases
+`https://github.com/<your-username>/<your-repo>/releases`
 
 ### Workflow Details
 

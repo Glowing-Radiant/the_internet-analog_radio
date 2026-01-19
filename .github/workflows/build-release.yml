@@ -87,8 +87,8 @@ jobs:
       - name: Generate version tag
         id: version
         run: |
-          if [[ $GITHUB_REF == refs/tags/* ]]; then
-            VERSION=${GITHUB_REF#refs/tags/}
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
           else
             # Generate version from commit count and short SHA
             VERSION="v$(git rev-list --count HEAD).$(git rev-parse --short HEAD)"
@@ -107,9 +107,9 @@ jobs:
           draft: false
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') }}
           files: |
-            artifacts/InternetAnalogRadio-windows.exe/*
-            artifacts/InternetAnalogRadio-linux/*
-            artifacts/InternetAnalogRadio-macos/*
+            artifacts/InternetAnalogRadio-windows.exe/InternetAnalogRadio.exe
+            artifacts/InternetAnalogRadio-linux/InternetAnalogRadio
+            artifacts/InternetAnalogRadio-macos/InternetAnalogRadio
           body: |
             ## Internet Analog Radio - Release ${{ steps.version.outputs.VERSION }}
             
