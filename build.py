@@ -15,6 +15,8 @@ args = [
     '--clean',
     # Add cytolk package data (includes DLLs usually)
     f'--add-data={cytolk_path}{os.pathsep}cytolk',
+    # Add sounds directory
+    f'--add-data=sounds{os.pathsep}sounds',
     # Hidden imports that might be missed
     '--hidden-import=vlc',
     '--hidden-import=cytolk',
