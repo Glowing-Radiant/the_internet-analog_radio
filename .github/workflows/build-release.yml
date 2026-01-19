@@ -1,0 +1,134 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build Executable - ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+        include:
+          - os: windows-latest
+            artifact_name: InternetAnalogRadio.exe
+            asset_name: InternetAnalogRadio-windows.exe
+          - os: ubuntu-latest
+            artifact_name: InternetAnalogRadio
+            asset_name: InternetAnalogRadio-linux
+          - os: macos-latest
+            artifact_name: InternetAnalogRadio
+            asset_name: InternetAnalogRadio-macos
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+      
+      - name: Install VLC (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y vlc libvlc-dev
+      
+      - name: Install VLC (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install --cask vlc
+      
+      - name: Build executable
+        run: python build.py
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: dist/${{ matrix.artifact_name }}
+          if-no-files-found: error
+  
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      
+      - name: Display structure of downloaded files
+        run: ls -R artifacts
+      
+      - name: Generate version tag
+        id: version
+        run: |
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+          else
+            # Generate version from commit count and short SHA
+            VERSION="v$(git rev-list --count HEAD).$(git rev-parse --short HEAD)"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Generated version: $VERSION"
+      
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.version.outputs.VERSION }}
+          name: Release ${{ steps.version.outputs.VERSION }}
+          draft: false
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+          files: |
+            artifacts/InternetAnalogRadio-windows.exe/*
+            artifacts/InternetAnalogRadio-linux/*
+            artifacts/InternetAnalogRadio-macos/*
+          body: |
+            ## Internet Analog Radio - Release ${{ steps.version.outputs.VERSION }}
+            
+            Automated build from commit ${{ github.sha }}
+            
+            ### Downloads
+            - **Windows**: InternetAnalogRadio-windows.exe
+            - **Linux**: InternetAnalogRadio-linux
+            - **macOS**: InternetAnalogRadio-macos
+            
+            ### Installation
+            1. Download the appropriate executable for your platform
+            2. Make sure VLC Media Player is installed on your system
+            3. Run the executable
+            
+            ### Requirements
+            - VLC Media Player must be installed
+              - Windows: https://www.videolan.org/vlc/download-windows.html
+              - macOS: https://www.videolan.org/vlc/download-macosx.html
+              - Linux: `sudo apt install vlc` (or equivalent)
+            
+            For more information, see the [README](https://github.com/${{ github.repository }}/blob/main/README.md)
