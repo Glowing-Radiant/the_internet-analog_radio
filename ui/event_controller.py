@@ -19,7 +19,7 @@ class EventController:
         self.timer_manager = timer_manager
         self.audio_presets_manager = audio_presets_manager
         
-        self.bands = ['local', 'national', 'international', 'favorites', 'exploratory']
+        self.bands = ['local', 'national', 'international', 'favorites', 'history', 'exploratory']
         # Append custom bands
         self.bands.extend(self.station_manager.custom_bands.keys())
         
@@ -52,10 +52,6 @@ class EventController:
         self._cached_band_idx = None
         
         self.last_scan_time = 0
-        
-        # NEW: History browsing state
-        self.history_browsing = False
-        self.history_index = 0
 
         # Play Intro Sound - Moved to main.py
         self._play_intro()
@@ -203,9 +199,6 @@ class EventController:
                         print(f"Clipboard error: {e}")
                         if self.accessibility_manager:
                             self.accessibility_manager.speak("Copy Failed")
-        # NEW: History browsing (H key)
-        elif key == pygame.K_h:
-            self._toggle_history_browsing()
         # NEW: Sleep timer controls (T key)
         elif key == pygame.K_t:
             if mods & pygame.KMOD_SHIFT:
@@ -481,35 +474,6 @@ class EventController:
     def _handle_continuous_input(self):
         keys = pygame.key.get_pressed()
         
-        # NEW: History browsing mode - override normal controls
-        if self.history_browsing:
-            # Use arrow keys to browse history
-            if not hasattr(self, '_history_nav_delay'):
-                self._history_nav_delay = 0
-            
-            REPEAT_DELAY = 10
-            
-            if keys[pygame.K_RIGHT]:
-                if self._history_nav_delay == 0:
-                    self._browse_history(1)
-                    self._history_nav_delay = REPEAT_DELAY
-                else:
-                    self._history_nav_delay -= 1
-            elif keys[pygame.K_LEFT]:
-                if self._history_nav_delay == 0:
-                    self._browse_history(-1)
-                    self._history_nav_delay = REPEAT_DELAY
-                else:
-                    self._history_nav_delay -= 1
-            elif keys[pygame.K_RETURN]:
-                # Enter to play selected history entry
-                self._replay_from_history()
-                self._history_nav_delay = 0
-            else:
-                self._history_nav_delay = 0
-            
-            return  # Skip normal input handling
-        
         # Initialize user volume if not present
         if not hasattr(self, 'user_volume'):
             self.user_volume = 0.5
@@ -674,6 +638,11 @@ class EventController:
         band = self.bands[self.current_band_index]
         if band == 'favorites':
             return self.favorites_manager.get_favorites(self.mode)
+        elif band == 'history':
+            # Return history as station list
+            if self.history_manager:
+                return self.history_manager.get_recent_stations(self.mode)
+            return []
         return self.station_manager.get_station_list(band, self.mode)
 
     def _get_current_station(self):
@@ -826,7 +795,7 @@ class EventController:
                 threading.Thread(target=fetch_tv, daemon=True).start()
                 
         # Rebuild Bands for the new Mode
-        standard_bands = ['local', 'national', 'international', 'favorites', 'exploratory']
+        standard_bands = ['local', 'national', 'international', 'favorites', 'history', 'exploratory']
         
         # Get custom bands for this mode
         custom = self.station_manager.custom_bands.get(self.mode, {})
@@ -862,7 +831,6 @@ class EventController:
             'channel_index': channel_index,
             'total_channels': total_channels,
             # NEW: Feature states
-            'history_browsing': self.history_browsing,
             'timer_active': self.timer_manager.is_active() if self.timer_manager else False,
             'timer_remaining': self.timer_manager.format_remaining_time() if self.timer_manager else None,
             'equalizer_enabled': self.audio_presets_manager.enabled if self.audio_presets_manager else False,
@@ -883,80 +851,6 @@ class EventController:
     # ============================================================================
     
     # --- History Manager Methods ---
-    
-    def _toggle_history_browsing(self):
-        """Toggle history browsing mode."""
-        if not self.history_manager:
-            return
-            
-        self.history_browsing = not self.history_browsing
-        
-        if self.history_browsing:
-            # Enter history browsing mode
-            history = self.history_manager.get_history(self.mode)
-            if not history:
-                print("No history available")
-                if self.accessibility_manager:
-                    self.accessibility_manager.speak("No history available")
-                self.history_browsing = False
-                return
-                
-            self.history_index = 0
-            entry = history[self.history_index]
-            station_name = entry['station'].get('name', 'Unknown')
-            formatted = self.history_manager.format_history_entry(entry)
-            
-            print(f"History mode: {formatted}")
-            if self.accessibility_manager:
-                self.accessibility_manager.speak(f"History browsing. {formatted}")
-        else:
-            # Exit history browsing mode
-            print("Exited history mode")
-            if self.accessibility_manager:
-                self.accessibility_manager.speak("Exited history")
-    
-    def _browse_history(self, direction: int):
-        """Browse through history entries."""
-        if not self.history_browsing or not self.history_manager:
-            return
-            
-        history = self.history_manager.get_history(self.mode)
-        if not history:
-            return
-            
-        self.history_index = (self.history_index + direction) % len(history)
-        entry = history[self.history_index]
-        formatted = self.history_manager.format_history_entry(entry)
-        
-        print(f"History: {formatted}")
-        if self.accessibility_manager:
-            self.accessibility_manager.speak(formatted)
-    
-    def _replay_from_history(self):
-        """Replay the currently selected history entry."""
-        if not self.history_browsing or not self.history_manager:
-            return
-            
-        history = self.history_manager.get_history(self.mode)
-        if not history or self.history_index >= len(history):
-            return
-            
-        entry = history[self.history_index]
-        station = entry['station']
-        
-        # Play the station
-        url = station.get('url_resolved')
-        if url:
-            self.stream_player.play(url)
-            self.stream_player.set_volume(self.user_volume)
-            
-            station_name = station.get('name', 'Unknown')
-            print(f"Replaying: {station_name}")
-            if self.accessibility_manager:
-                self.accessibility_manager.speak(f"Replaying {station_name}")
-            
-            # Exit history browsing mode
-            self.history_browsing = False
     
     # --- Timer Manager Methods ---
     

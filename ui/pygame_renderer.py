@@ -200,10 +200,6 @@ class PygameRenderer:
         y_pos = self.height - 50
         status_items = []
         
-        # History browsing indicator
-        if state.get('history_browsing'):
-            status_items.append("HISTORY MODE")
-        
         # Sleep timer
         if state.get('timer_active'):
             timer_text = state.get('timer_remaining', 'Timer Active')

@@ -13,12 +13,13 @@ The Internet Analog Radio is a minimalist, keyboard-driven internet radio player
     *   **National**: Top stations from your country.
     *   **International**: Top voted stations globally.
     *   **Favorites**: Your saved stations.
+    *   **🆕 History**: Your recently played stations (up to 100 entries).
     *   **Exploratory**: Search for specific genres or names.
 *   **Custom Bands**: Save your search results as permanent bands (e.g., "Jazz", "News").
 *   **Accessibility First**: Fully accessible with screen readers (NVDA, JAWS, Narrator) via `cytolk`.
 *   **Keyboard Control**: Designed for completely mouse-free operation.
 *   **Dual Mode**: Switch between **Radio Mode** (Analog tuning) and **TV Mode** (Direct Channel Indexing).
-*   **🆕 Playback History**: Automatically tracks your listening history with timestamps and duration. Browse and replay previously listened stations.
+*   **🆕 Playback History**: Automatically tracks your listening history with timestamps and duration. Access via the History band.
 *   **🆕 Sleep Timer**: Set a timer to automatically stop playback after a specified duration with smooth fade-out.
 *   **🆕 Audio Equalizer**: Built-in equalizer with 10 preset modes (Rock, Jazz, Classical, Speech, Bass Boost, etc.) for enhanced audio.
 
@@ -59,11 +60,11 @@ python main.py
 
 | Key | Action |
 | :--- | :--- |
-| **Right Arrow** | Radio: Tune Up (+0.1 MHz). Hold for smooth tuning. <br> TV: Next Channel (CH +1). <br> History: Browse forward through history entries. |
-| **Left Arrow** | Radio: Tune Down (-0.1 MHz). Hold for smooth tuning. <br> TV: Prev Channel (CH -1). <br> History: Browse backward through history entries. |
+| **Right Arrow** | Radio: Tune Up (+0.1 MHz). Hold for smooth tuning. <br> TV/History: Next Channel/Station. |
+| **Left Arrow** | Radio: Tune Down (-0.1 MHz). Hold for smooth tuning. <br> TV/History: Prev Channel/Station. |
 | **Ctrl + Arrows** | Radio: Scan to next station (Debounced). |
 | **Up / Down** | Volume Control (Time-based smooth adjustment) |
-| **Tab** | Cycle Bands Forward (Local -> National -> ...) |
+| **Tab** | Cycle Bands Forward (Local -> National -> International -> Favorites -> History -> Exploratory) |
 | **Shift + Tab** | Cycle Bands Backward |
 | **Ctrl + Tab** | **Switch Mode (Radio / TV)** |
 | **+ (Plus)** | Add current station to Favorites |
@@ -74,7 +75,6 @@ python main.py
 | **B** | Save current Exploratory search as a Custom Band |
 | **W** | Announce "Now Playing" metadata |
 | **C** | Copy current Station URL to Clipboard |
-| **🆕 H** | **Toggle History Browsing Mode** - View and replay previously listened stations |
 | **🆕 T** | **Set Sleep Timer** - Enter duration in minutes |
 | **🆕 Shift + T** | **Cancel Sleep Timer** |
 | **🆕 E** | **Toggle Audio Equalizer** - Enable/disable equalizer |
@@ -88,10 +88,9 @@ python main.py
 3.  If you like this collection, press **B** to save it as a permanent band named "LoFi".
 
 ### 🆕 Using Playback History
-1.  Press **H** to enter History Browsing Mode.
-2.  Use **Left/Right Arrow** keys to browse through your listening history.
-3.  Press **Enter** to replay the selected station.
-4.  Press **H** again to exit history mode.
+1.  Press **Tab** to cycle through bands until you reach the **History** band.
+2.  Use **Left/Right Arrow** keys to navigate through your listening history.
+3.  The currently selected station will play automatically (in Radio mode, you may need to tune to the station's frequency).
 
 ### 🆕 Using Sleep Timer
 1.  Press **T** to open the sleep timer dialog.
