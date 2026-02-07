@@ -6,12 +6,18 @@ from core.static_generator import StaticGenerator
 import threading
 
 class EventController:
-    def __init__(self, station_manager, favorites_manager, stream_player, renderer, accessibility_manager=None):
+    def __init__(self, station_manager, favorites_manager, stream_player, renderer, accessibility_manager=None, 
+                 history_manager=None, timer_manager=None, audio_presets_manager=None):
         self.station_manager = station_manager
         self.favorites_manager = favorites_manager
         self.stream_player = stream_player
         self.renderer = renderer
         self.accessibility_manager = accessibility_manager
+        
+        # NEW: Feature managers
+        self.history_manager = history_manager
+        self.timer_manager = timer_manager
+        self.audio_presets_manager = audio_presets_manager
         
         self.bands = ['local', 'national', 'international', 'favorites', 'exploratory']
         # Append custom bands
@@ -29,7 +35,7 @@ class EventController:
         self.user_volume = 0.5 
         
         self.is_muted = False
-        self.input_mode = None # 'search' or 'url'
+        self.input_mode = None # 'search', 'url', 'history', or 'timer'
         self.input_text = ""
         self.last_search_query = ""
         
@@ -46,6 +52,10 @@ class EventController:
         self._cached_band_idx = None
         
         self.last_scan_time = 0
+        
+        # NEW: History browsing state
+        self.history_browsing = False
+        self.history_index = 0
 
         # Play Intro Sound - Moved to main.py
         self._play_intro()
@@ -100,6 +110,8 @@ class EventController:
                 self._submit_search()
             elif self.input_mode == 'url':
                 self._submit_url()
+            elif self.input_mode == 'timer':
+                self._submit_timer()
             self.input_mode = None
             self.input_text = ""
         elif event.key == pygame.K_ESCAPE:
@@ -191,6 +203,28 @@ class EventController:
                         print(f"Clipboard error: {e}")
                         if self.accessibility_manager:
                             self.accessibility_manager.speak("Copy Failed")
+        # NEW: History browsing (H key)
+        elif key == pygame.K_h:
+            self._toggle_history_browsing()
+        # NEW: Sleep timer controls (T key)
+        elif key == pygame.K_t:
+            if mods & pygame.KMOD_SHIFT:
+                # Shift+T: Cancel timer
+                self._cancel_timer()
+            else:
+                # T: Set timer
+                pygame.event.clear()
+                self.input_mode = 'timer'
+                self.input_text = ""
+                if self.accessibility_manager:
+                    self.accessibility_manager.speak("Set Sleep Timer (minutes)")
+        # NEW: Equalizer controls (E key)
+        elif key == pygame.K_e:
+            self._toggle_equalizer()
+        # NEW: Preset cycling (P key)
+        elif key == pygame.K_p:
+            direction = -1 if (mods & pygame.KMOD_SHIFT) else 1
+            self._cycle_audio_preset(direction)
 
     def _submit_search(self):
         print(f"Searching for: {self.input_text}")
@@ -243,6 +277,18 @@ class EventController:
                 print(f"Saved custom band: {name} in {self.mode}")
 
     def _update_audio_mixing(self):
+        # NEW: Check timer and apply fade-out if needed
+        timer_fade_multiplier = 1.0
+        if self.timer_manager:
+            # Check if timer expired
+            if self.timer_manager.check_timer():
+                # Timer expired, stop playback
+                self.stream_player.stop()
+                return
+            
+            # Get fade multiplier
+            timer_fade_multiplier = self.timer_manager.get_fade_volume_multiplier()
+        
         # TV MODE: Direct Index Playback
         if self.mode == 'tv':
             station = self._get_current_station()
@@ -254,10 +300,14 @@ class EventController:
                 url = station.get('url_resolved')
                 # Play if valid
                 if url:
+                    # NEW: Track history
+                    if self.history_manager:
+                        self.history_manager.start_tracking(station, self.mode)
+                    
                     # Volume management
                     if not hasattr(self, 'user_volume'): self.user_volume = 0.5
                     
-                    final_vol = self.user_volume
+                    final_vol = self.user_volume * timer_fade_multiplier  # Apply timer fade
                     if self.is_muted: final_vol = 0.0
                     
                     self.stream_player.play(url)
@@ -272,6 +322,9 @@ class EventController:
                                  self._last_spoken_station = name
             else:
                 self.stream_player.stop()
+                # NEW: Stop tracking when no station
+                if self.history_manager:
+                    self.history_manager.stop_tracking(self.mode)
             return
 
         # RADIO MODE: Frequency Logic
@@ -292,6 +345,10 @@ class EventController:
         
         if closest_station and distance < band_width:
             current_station_url = closest_station.get('url_resolved')
+            
+            # NEW: Track history when locked on station
+            if distance < 0.1 and self.history_manager:
+                self.history_manager.start_tracking(closest_station, self.mode)
             
             if distance < 0.1:
                 # LOCKED - Perfect Signal
@@ -315,10 +372,10 @@ class EventController:
                 station_vol = 0.0
                 static_vol = 1.0
 
-            # Apply Master / Mute
+            # Apply Master / Mute / Timer Fade
             if not hasattr(self, 'user_volume'): self.user_volume = 0.5
             
-            final_station_vol = station_vol * self.user_volume
+            final_station_vol = station_vol * self.user_volume * timer_fade_multiplier  # Apply timer fade
             final_static_vol = static_vol * self.user_volume * 0.15
             
             if self.is_muted:
@@ -349,6 +406,10 @@ class EventController:
             # No station in range
             self.stream_player.stop()
             self._last_spoken_station = None
+            
+            # NEW: Stop tracking when no station
+            if self.history_manager:
+                self.history_manager.stop_tracking(self.mode)
             
             # Full static if not muted/intro
             if self.is_muted or pygame.mixer.music.get_busy():
@@ -419,6 +480,35 @@ class EventController:
 
     def _handle_continuous_input(self):
         keys = pygame.key.get_pressed()
+        
+        # NEW: History browsing mode - override normal controls
+        if self.history_browsing:
+            # Use arrow keys to browse history
+            if not hasattr(self, '_history_nav_delay'):
+                self._history_nav_delay = 0
+            
+            REPEAT_DELAY = 10
+            
+            if keys[pygame.K_RIGHT]:
+                if self._history_nav_delay == 0:
+                    self._browse_history(1)
+                    self._history_nav_delay = REPEAT_DELAY
+                else:
+                    self._history_nav_delay -= 1
+            elif keys[pygame.K_LEFT]:
+                if self._history_nav_delay == 0:
+                    self._browse_history(-1)
+                    self._history_nav_delay = REPEAT_DELAY
+                else:
+                    self._history_nav_delay -= 1
+            elif keys[pygame.K_RETURN]:
+                # Enter to play selected history entry
+                self._replay_from_history()
+                self._history_nav_delay = 0
+            else:
+                self._history_nav_delay = 0
+            
+            return  # Skip normal input handling
         
         # Initialize user volume if not present
         # Initialize user volume if not present
@@ -771,7 +861,13 @@ class EventController:
             'input_mode': self.input_mode,
             'input_text': self.input_text,
             'channel_index': channel_index,
-            'total_channels': total_channels
+            'total_channels': total_channels,
+            # NEW: Feature states
+            'history_browsing': self.history_browsing,
+            'timer_active': self.timer_manager.is_active() if self.timer_manager else False,
+            'timer_remaining': self.timer_manager.format_remaining_time() if self.timer_manager else None,
+            'equalizer_enabled': self.audio_presets_manager.enabled if self.audio_presets_manager else False,
+            'equalizer_preset': self.audio_presets_manager.current_preset_name if self.audio_presets_manager else None
         }
         
         # fix: _get_closest_station returns (station, dist)
@@ -782,3 +878,164 @@ class EventController:
              state['current_station'] = self._get_current_station()
 
         self.renderer.render(state)
+    
+    # ============================================================================
+    # NEW FEATURE METHODS
+    # ============================================================================
+    
+    # --- History Manager Methods ---
+    
+    def _toggle_history_browsing(self):
+        """Toggle history browsing mode."""
+        if not self.history_manager:
+            return
+            
+        self.history_browsing = not self.history_browsing
+        
+        if self.history_browsing:
+            # Enter history browsing mode
+            history = self.history_manager.get_history(self.mode)
+            if not history:
+                print("No history available")
+                if self.accessibility_manager:
+                    self.accessibility_manager.speak("No history available")
+                self.history_browsing = False
+                return
+                
+            self.history_index = 0
+            entry = history[self.history_index]
+            station_name = entry['station'].get('name', 'Unknown')
+            formatted = self.history_manager.format_history_entry(entry)
+            
+            print(f"History mode: {formatted}")
+            if self.accessibility_manager:
+                self.accessibility_manager.speak(f"History browsing. {formatted}")
+        else:
+            # Exit history browsing mode
+            print("Exited history mode")
+            if self.accessibility_manager:
+                self.accessibility_manager.speak("Exited history")
+    
+    def _browse_history(self, direction: int):
+        """Browse through history entries."""
+        if not self.history_browsing or not self.history_manager:
+            return
+            
+        history = self.history_manager.get_history(self.mode)
+        if not history:
+            return
+            
+        self.history_index = (self.history_index + direction) % len(history)
+        entry = history[self.history_index]
+        formatted = self.history_manager.format_history_entry(entry)
+        
+        print(f"History: {formatted}")
+        if self.accessibility_manager:
+            self.accessibility_manager.speak(formatted)
+    
+    def _replay_from_history(self):
+        """Replay the currently selected history entry."""
+        if not self.history_browsing or not self.history_manager:
+            return
+            
+        history = self.history_manager.get_history(self.mode)
+        if not history or self.history_index >= len(history):
+            return
+            
+        entry = history[self.history_index]
+        station = entry['station']
+        
+        # Play the station
+        url = station.get('url_resolved')
+        if url:
+            self.stream_player.play(url)
+            self.stream_player.set_volume(self.user_volume)
+            
+            station_name = station.get('name', 'Unknown')
+            print(f"Replaying: {station_name}")
+            if self.accessibility_manager:
+                self.accessibility_manager.speak(f"Replaying {station_name}")
+            
+            # Exit history browsing mode
+            self.history_browsing = False
+    
+    # --- Timer Manager Methods ---
+    
+    def _submit_timer(self):
+        """Submit sleep timer input."""
+        if not self.timer_manager:
+            return
+            
+        try:
+            minutes = int(self.input_text)
+            if minutes <= 0:
+                raise ValueError("Timer must be positive")
+                
+            # Set timer with callback to stop playback
+            def on_timer_expired():
+                self.stream_player.stop()
+                if self.accessibility_manager:
+                    self.accessibility_manager.speak("Sleep timer expired")
+                    
+            self.timer_manager.set_timer(minutes, on_timer_expired)
+            
+            print(f"Sleep timer set for {minutes} minutes")
+            if self.accessibility_manager:
+                self.accessibility_manager.speak(f"Timer set for {minutes} minutes")
+                
+        except ValueError:
+            print("Invalid timer value")
+            if self.accessibility_manager:
+                self.accessibility_manager.speak("Invalid timer value")
+    
+    def _cancel_timer(self):
+        """Cancel active sleep timer."""
+        if not self.timer_manager:
+            return
+            
+        if self.timer_manager.is_active():
+            self.timer_manager.cancel_timer()
+            print("Sleep timer cancelled")
+            if self.accessibility_manager:
+                self.accessibility_manager.speak("Timer cancelled")
+        else:
+            print("No active timer")
+            if self.accessibility_manager:
+                self.accessibility_manager.speak("No active timer")
+    
+    # --- Audio Presets Manager Methods ---
+    
+    def _toggle_equalizer(self):
+        """Toggle equalizer on/off."""
+        if not self.audio_presets_manager or not self.audio_presets_manager.equalizer:
+            print("Equalizer not available")
+            return
+            
+        enabled = self.audio_presets_manager.toggle_equalizer(self.stream_player.player)
+        
+        state = "enabled" if enabled else "disabled"
+        preset = self.audio_presets_manager.current_preset_name if enabled else ""
+        
+        print(f"Equalizer {state} {preset}")
+        if self.accessibility_manager:
+            msg = f"Equalizer {state}"
+            if enabled:
+                msg += f" with {preset} preset"
+            self.accessibility_manager.speak(msg)
+    
+    def _cycle_audio_preset(self, direction: int = 1):
+        """Cycle through audio presets."""
+        if not self.audio_presets_manager or not self.audio_presets_manager.equalizer:
+            print("Equalizer not available")
+            return
+            
+        preset_name = self.audio_presets_manager.cycle_preset(direction)
+        
+        # Apply to player if equalizer is enabled
+        if self.audio_presets_manager.enabled:
+            self.audio_presets_manager.apply_to_player(self.stream_player.player)
+        
+        print(f"Preset: {preset_name}")
+        if self.accessibility_manager:
+            self.accessibility_manager.speak(f"Preset {preset_name}")
+
