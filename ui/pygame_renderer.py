@@ -62,6 +62,9 @@ class PygameRenderer:
         if mode == 'radio':
             self._draw_dial(state)
 
+        # NEW: Draw Feature Status Bar
+        self._draw_feature_status(state)
+
         # Draw Input Modal if active
         if state.get('input_mode'):
             self._draw_input_modal(state['input_mode'], state.get('input_text', ''))
@@ -84,7 +87,15 @@ class PygameRenderer:
         pygame.draw.rect(self.screen, self.colors['accent'], (box_x, box_y, box_width, box_height), 2)
         
         # Title
-        title = "SEARCH STATION" if mode == 'search' else "ENTER STREAM URL"
+        if mode == 'search':
+            title = "SEARCH STATION"
+        elif mode == 'url':
+            title = "ENTER STREAM URL"
+        elif mode == 'timer':
+            title = "SET SLEEP TIMER (MINUTES)"
+        else:
+            title = "INPUT"
+            
         self._draw_text(title, self.font_medium, self.colors['accent'], (box_x + 20, box_y + 20))
         
         # Input Text
@@ -183,3 +194,29 @@ class PygameRenderer:
         end_pos = (center[0] + radius * 0.8 * math.cos(angle), center[1] + radius * 0.8 * math.sin(angle))
         pygame.draw.line(self.screen, self.colors['accent'], center, end_pos, 3)
         pygame.draw.circle(self.screen, self.colors['accent'], center, 5)
+    
+    def _draw_feature_status(self, state):
+        """Draw status bar for new features at the bottom of the screen."""
+        y_pos = self.height - 50
+        status_items = []
+        
+        # Sleep timer
+        if state.get('timer_active'):
+            timer_text = state.get('timer_remaining', 'Timer Active')
+            status_items.append(f"⏱ {timer_text}")
+        
+        # Equalizer
+        if state.get('equalizer_enabled'):
+            preset_name = state.get('equalizer_preset', 'EQ')
+            status_items.append(f"♪ EQ: {preset_name}")
+        
+        # Draw status items
+        if status_items:
+            status_text = " | ".join(status_items)
+            # Draw background bar
+            bar_height = 40
+            pygame.draw.rect(self.screen, self.colors['panel_bg'], 
+                           (0, y_pos - 10, self.width, bar_height))
+            # Draw text
+            self._draw_text(status_text, self.font_small, self.colors['accent'], 
+                          (20, y_pos))

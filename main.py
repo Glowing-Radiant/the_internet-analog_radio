@@ -8,6 +8,9 @@ from core.region_detector import RegionDetector
 from core.station_manager import StationManager
 from core.favorites_manager import FavoritesManager
 from core.stream_player import StreamPlayer
+from core.history_manager import HistoryManager
+from core.timer_manager import TimerManager
+from core.audio_presets import AudioPresetsManager
 from ui.pygame_renderer import PygameRenderer
 from ui.event_controller import EventController
 from core.accessibility import AccessibilityManager
@@ -74,6 +77,14 @@ def main():
     favorites_manager = FavoritesManager(config_manager)
     stream_player = StreamPlayer()
     
+    # NEW: Initialize new managers
+    history_manager = HistoryManager(config_manager, max_entries=100)
+    timer_manager = TimerManager()
+    audio_presets_manager = AudioPresetsManager(config_manager)
+    
+    # Initialize equalizer
+    audio_presets_manager.initialize_equalizer(stream_player.instance)
+    
     # 2. Initialize UI
     renderer = PygameRenderer()
     
@@ -83,7 +94,10 @@ def main():
         favorites_manager=favorites_manager,
         stream_player=stream_player,
         renderer=renderer,
-        accessibility_manager=accessibility_manager
+        accessibility_manager=accessibility_manager,
+        history_manager=history_manager,
+        timer_manager=timer_manager,
+        audio_presets_manager=audio_presets_manager
     )
     
     # 4. Run
