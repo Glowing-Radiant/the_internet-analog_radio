@@ -18,6 +18,9 @@ The Internet Analog Radio is a minimalist, keyboard-driven internet radio player
 *   **Accessibility First**: Fully accessible with screen readers (NVDA, JAWS, Narrator) via `cytolk`.
 *   **Keyboard Control**: Designed for completely mouse-free operation.
 *   **Dual Mode**: Switch between **Radio Mode** (Analog tuning) and **TV Mode** (Direct Channel Indexing).
+*   **🆕 Playback History**: Automatically tracks your listening history with timestamps and duration. Browse and replay previously listened stations.
+*   **🆕 Sleep Timer**: Set a timer to automatically stop playback after a specified duration with smooth fade-out.
+*   **🆕 Audio Equalizer**: Built-in equalizer with 10 preset modes (Rock, Jazz, Classical, Speech, Bass Boost, etc.) for enhanced audio.
 
 ## TV Mode Features
 *   **Direct Navigation**: Left/Right keys switch channels immediately (CH 1 -> CH 2).
@@ -56,8 +59,8 @@ python main.py
 
 | Key | Action |
 | :--- | :--- |
-| **Right Arrow** | Radio: Tune Up (+0.1 MHz). Hold for smooth tuning. <br> TV: Next Channel (CH +1). |
-| **Left Arrow** | Radio: Tune Down (-0.1 MHz). Hold for smooth tuning. <br> TV: Prev Channel (CH -1). |
+| **Right Arrow** | Radio: Tune Up (+0.1 MHz). Hold for smooth tuning. <br> TV: Next Channel (CH +1). <br> History: Browse forward through history entries. |
+| **Left Arrow** | Radio: Tune Down (-0.1 MHz). Hold for smooth tuning. <br> TV: Prev Channel (CH -1). <br> History: Browse backward through history entries. |
 | **Ctrl + Arrows** | Radio: Scan to next station (Debounced). |
 | **Up / Down** | Volume Control (Time-based smooth adjustment) |
 | **Tab** | Cycle Bands Forward (Local -> National -> ...) |
@@ -71,6 +74,12 @@ python main.py
 | **B** | Save current Exploratory search as a Custom Band |
 | **W** | Announce "Now Playing" metadata |
 | **C** | Copy current Station URL to Clipboard |
+| **🆕 H** | **Toggle History Browsing Mode** - View and replay previously listened stations |
+| **🆕 T** | **Set Sleep Timer** - Enter duration in minutes |
+| **🆕 Shift + T** | **Cancel Sleep Timer** |
+| **🆕 E** | **Toggle Audio Equalizer** - Enable/disable equalizer |
+| **🆕 P** | **Cycle Audio Presets** - Switch between EQ presets (forward) |
+| **🆕 Shift + P** | **Cycle Audio Presets** - Switch between EQ presets (backward) |
 | **Q** | Quit Application |
 
 ### Search & Custom Bands
@@ -78,12 +87,42 @@ python main.py
 2.  Press **Enter**. The radio switches to the "Exploratory" band with your results.
 3.  If you like this collection, press **B** to save it as a permanent band named "LoFi".
 
+### 🆕 Using Playback History
+1.  Press **H** to enter History Browsing Mode.
+2.  Use **Left/Right Arrow** keys to browse through your listening history.
+3.  Press **Enter** to replay the selected station.
+4.  Press **H** again to exit history mode.
+
+### 🆕 Using Sleep Timer
+1.  Press **T** to open the sleep timer dialog.
+2.  Enter the duration in minutes (e.g., "30" for 30 minutes).
+3.  Press **Enter** to activate the timer.
+4.  The audio will gradually fade out in the last 10 seconds before stopping.
+5.  Press **Shift + T** to cancel an active timer.
+
+### 🆕 Using Audio Equalizer
+1.  Press **E** to toggle the equalizer on/off.
+2.  Press **P** to cycle through available presets:
+    *   Flat (neutral)
+    *   Rock
+    *   Jazz
+    *   Classical
+    *   Pop
+    *   Bass Boost
+    *   Treble Boost
+    *   Speech
+    *   Vocal
+    *   Live
+3.  The current preset is displayed in the status bar at the bottom of the screen.
+
 ## Configuration
 
 Configuration files are stored in the `config/` directory:
 *   `favorites.json`: Stores your favorite stations.
 *   `custom_bands.json`: Stores your saved custom bands.
 *   `user_region.json`: Caches your detected location.
+*   **🆕** `history.json`: Stores your playback history (up to 100 entries per mode).
+*   **🆕** `audio_presets.json`: Stores your custom audio equalizer presets.
 
 ## License
 
