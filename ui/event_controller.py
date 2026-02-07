@@ -511,7 +511,6 @@ class EventController:
             return  # Skip normal input handling
         
         # Initialize user volume if not present
-        # Initialize user volume if not present
         if not hasattr(self, 'user_volume'):
             self.user_volume = 0.5
             

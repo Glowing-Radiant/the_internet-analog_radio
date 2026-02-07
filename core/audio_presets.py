@@ -42,14 +42,20 @@ class AudioPresetsManager:
         """
         Initialize the VLC equalizer object.
         Must be called with a VLC instance.
+        
+        Args:
+            vlc_instance: A VLC Instance object from python-vlc
         """
         try:
             self.equalizer = vlc.AudioEqualizer()
             if self.equalizer:
-                print("VLC Equalizer initialized")
+                print("VLC Equalizer initialized successfully")
                 return True
+            else:
+                print("Failed to initialize equalizer: AudioEqualizer returned None")
+                return False
         except Exception as e:
-            print(f"Failed to initialize equalizer: {e}")
+            print(f"Failed to initialize equalizer: {type(e).__name__}: {e}")
             self.equalizer = None
             return False
             
