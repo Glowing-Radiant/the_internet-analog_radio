@@ -5,15 +5,17 @@ import random
 from core.static_generator import StaticGenerator
 import threading
 from core.twitch_resolver import TwitchResolver
+from core.soundcloud_resolver import SoundCloudResolver
 
 class EventController:
     def __init__(self, station_manager, favorites_manager, stream_player, renderer, accessibility_manager=None, 
-                 history_manager=None, timer_manager=None, audio_presets_manager=None):
+                 history_manager=None, timer_manager=None, audio_presets_manager=None, config_manager=None):
         self.station_manager = station_manager
         self.favorites_manager = favorites_manager
         self.stream_player = stream_player
         self.renderer = renderer
         self.accessibility_manager = accessibility_manager
+        self.config_manager = config_manager
         
         # NEW: Feature managers
         self.history_manager = history_manager
@@ -46,11 +48,32 @@ class EventController:
         
         self.running = True
 
-        # Mode: 'radio' or 'tv'
+        self.all_modes = ['radio', 'tv', 'twitch', 'soundcloud']
         self.mode = 'radio'
         self.modes = ['radio', 'tv']
         self.twitch_resolver = TwitchResolver()
         self._twitch_fail_notice_until = 0
+        self.soundcloud_resolver = None
+        if self.station_manager.soundcloud_manager:
+            client_id = self.station_manager.soundcloud_manager.config.get('client_id', '')
+            self.soundcloud_resolver = SoundCloudResolver(client_id)
+
+        self.settings_panel_open = False
+        self.settings_cursor = 0
+        self.settings_items = ['eq_enabled', 'eq_preset'] + [f'mode_{m}' for m in self.all_modes] + ['close']
+        self.settings = self._load_settings()
+        self.modes = self._get_enabled_modes()
+        if not self.modes:
+            self.settings['modes']['radio'] = True
+            self.modes = ['radio']
+
+        self.mode = self.modes[0]
+        self.bands = self._build_bands_for_mode(self.mode)
+        for b in self.bands:
+            if b not in self.band_indices:
+                self.band_indices[b] = 0
+        self.current_band_index = 1 if len(self.bands) > 1 else 0
+        self._apply_equalizer_settings()
         
         # Cache for closest station to avoid recalculating every frame
         self._cached_closest = None
@@ -79,7 +102,7 @@ class EventController:
         while self.running:
             try:
                 self._handle_events()
-                if not self.input_mode:
+                if not self.input_mode and not self.settings_panel_open:
                     self._handle_continuous_input()
                 
                 self._update_audio_mixing()
@@ -99,7 +122,9 @@ class EventController:
             if event.type == pygame.QUIT:
                 self.running = False
             elif event.type == pygame.KEYDOWN:
-                if self.input_mode:
+                if self.settings_panel_open:
+                    self._handle_settings_event(event)
+                elif self.input_mode:
                     self._handle_input(event)
                 else:
                     self._handle_keydown(event)
@@ -149,6 +174,11 @@ class EventController:
         
         if key == pygame.K_q:
             self.running = False
+        elif key == pygame.K_o:
+            if self.settings_panel_open:
+                self._close_settings_panel()
+            else:
+                self._open_settings_panel()
         elif key == pygame.K_TAB:
             # Check for Ctrl+Tab for Mode Switch
             if mods & pygame.KMOD_CTRL:
@@ -300,8 +330,8 @@ class EventController:
             # Get fade multiplier
             timer_fade_multiplier = self.timer_manager.get_fade_volume_multiplier()
         
-        # TV MODE: Direct Index Playback
-        if self.mode == 'tv':
+        # Non-radio modes: direct index playback
+        if self.mode != 'radio':
             station = self._get_current_station()
             
             # Reset Static
@@ -309,6 +339,10 @@ class EventController:
             
             if station:
                 url = station.get('url_resolved')
+                if self.mode == 'twitch':
+                    url = self._resolve_twitch_url(url)
+                elif self.mode == 'soundcloud':
+                    url = self._resolve_soundcloud_url(station)
                 # Play if valid
                 if url:
                     # NEW: Track history
@@ -517,8 +551,8 @@ class EventController:
         # Radio: 0.1 MHz step
         # TV: 1 Channel step
         
-        if self.mode == 'tv':
-             # TV NAVIGATION
+        if self.mode != 'radio':
+             # Non-radio mode navigation
              REPEAT_DELAY = 8 # Slightly slower for channel surfing
              
              if keys[pygame.K_RIGHT]:
@@ -799,8 +833,16 @@ class EventController:
                 self.accessibility_manager.speak("Could not remove")
 
     def _toggle_mode(self):
+        if len(self.modes) <= 1:
+            return
         current_index = self.modes.index(self.mode)
-        self.mode = self.modes[(current_index + 1) % len(self.modes)]
+        next_mode = self.modes[(current_index + 1) % len(self.modes)]
+        self._switch_mode(next_mode)
+
+    def _switch_mode(self, mode):
+        if mode not in self.modes:
+            return
+        self.mode = mode
         print(f"Switched to Mode: {self.mode.upper()}")
         
         if self.accessibility_manager:
@@ -820,15 +862,18 @@ class EventController:
                     self.station_manager.fetch_tv_all() 
                     
                 threading.Thread(target=fetch_tv, daemon=True).start()
+        elif self.mode == 'twitch':
+            if not self.station_manager.twitch_stations:
+                def fetch_twitch():
+                    self.station_manager.fetch_twitch_streams()
+                threading.Thread(target=fetch_twitch, daemon=True).start()
+        elif self.mode == 'soundcloud':
+            if not self.station_manager.soundcloud_stations:
+                def fetch_soundcloud():
+                    self.station_manager.fetch_soundcloud_tracks("music")
+                threading.Thread(target=fetch_soundcloud, daemon=True).start()
 
-                
-        # Rebuild Bands for the new Mode
-        standard_bands = ['local', 'national', 'international', 'favorites', 'history', 'exploratory']
-        
-        # Get custom bands for this mode
-        custom = self.station_manager.custom_bands.get(self.mode, {}) if hasattr(self.station_manager, 'custom_bands') else {}
-        
-        self.bands = standard_bands + list(custom.keys())
+        self.bands = self._build_bands_for_mode(self.mode)
         
         # Initialize indices for new bands if missing
         for b in self.bands:
@@ -836,7 +881,7 @@ class EventController:
                 self.band_indices[b] = 0
 
         # Reset band index
-        self.current_band_index = 1
+        self.current_band_index = 1 if len(self.bands) > 1 else 0
         if self.current_band_index >= len(self.bands):
              self.current_band_index = 0 
 
@@ -863,7 +908,7 @@ class EventController:
         
         state = {
             'mode': self.mode,
-            'current_station': self._get_current_station()[0] if self.mode == 'radio' else self._get_current_station(), # TV uses _get_current_station directly which returns the station object
+            'current_station': None,
             'frequency': self.current_frequency,
             'volume': getattr(self, 'user_volume', 0.5), # Show user volume
             'active_panel': self.bands[self.current_band_index],
@@ -877,7 +922,10 @@ class EventController:
             'timer_remaining': self.timer_manager.format_remaining_time() if self.timer_manager else None,
             'equalizer_enabled': self.audio_presets_manager.enabled if self.audio_presets_manager else False,
             'equalizer_preset': self.audio_presets_manager.current_preset_name if self.audio_presets_manager else None,
-            'ui_message': ui_message
+            'ui_message': ui_message,
+            'settings_open': self.settings_panel_open,
+            'settings_cursor': self.settings_cursor,
+            'settings_items': self._get_settings_ui_items()
         }
         
         # fix: _get_closest_station returns (station, dist)
@@ -958,6 +1006,8 @@ class EventController:
             if enabled:
                 msg += f" with {preset} preset"
             self.accessibility_manager.speak(msg)
+        self.settings['equalizer']['enabled'] = enabled
+        self._save_settings()
     
     def _cycle_audio_preset(self, direction: int = 1):
         """Cycle through audio presets."""
@@ -974,6 +1024,8 @@ class EventController:
         print(f"Preset: {preset_name}")
         if self.accessibility_manager:
             self.accessibility_manager.speak(f"Preset {preset_name}")
+        self.settings['equalizer']['preset'] = preset_name
+        self._save_settings()
 
     def _resolve_twitch_url(self, url):
         if not url or not url.startswith("twitch://"):
@@ -991,4 +1043,186 @@ class EventController:
                     self.accessibility_manager.speak("Twitch stream unavailable")
                 self._twitch_fail_notice_until = now + 3000
         return play_url
+
+    def _resolve_soundcloud_url(self, station):
+        if not station:
+            return None
+        url = station.get("url_resolved", "")
+        if url and not url.startswith("soundcloud://"):
+            return url
+        if not self.soundcloud_resolver:
+            return None
+        return self.soundcloud_resolver.resolve(station)
+
+    def _build_bands_for_mode(self, mode):
+        if mode == 'radio':
+            standard_bands = ['local', 'national', 'international', 'favorites', 'history', 'exploratory']
+        elif mode == 'tv':
+            standard_bands = ['national', 'international', 'favorites', 'history']
+        elif mode == 'twitch':
+            standard_bands = ['twitch', 'favorites', 'history']
+        elif mode == 'soundcloud':
+            standard_bands = ['soundcloud', 'favorites', 'history']
+        else:
+            standard_bands = ['favorites', 'history']
+
+        custom = self.station_manager.custom_bands.get(mode, {}) if hasattr(self.station_manager, 'custom_bands') else {}
+        return standard_bands + list(custom.keys())
+
+    def _load_settings(self):
+        defaults = {
+            'modes': {
+                'radio': True,
+                'tv': True,
+                'twitch': False,
+                'soundcloud': False
+            },
+            'equalizer': {
+                'enabled': False,
+                'preset': 'Flat'
+            }
+        }
+        if not self.config_manager:
+            return defaults
+        loaded = self.config_manager.load_json("ui_settings.json", defaults)
+        if not isinstance(loaded, dict):
+            return defaults
+        loaded_modes = loaded.get('modes', {})
+        loaded_eq = loaded.get('equalizer', {})
+        settings = {
+            'modes': dict(defaults['modes']),
+            'equalizer': dict(defaults['equalizer'])
+        }
+        if isinstance(loaded_modes, dict):
+            for mode in self.all_modes:
+                if mode in loaded_modes:
+                    settings['modes'][mode] = bool(loaded_modes[mode])
+        if isinstance(loaded_eq, dict):
+            if 'enabled' in loaded_eq:
+                settings['equalizer']['enabled'] = bool(loaded_eq['enabled'])
+            if 'preset' in loaded_eq and isinstance(loaded_eq['preset'], str):
+                settings['equalizer']['preset'] = loaded_eq['preset']
+        return settings
+
+    def _save_settings(self):
+        if self.config_manager:
+            self.config_manager.save_json("ui_settings.json", self.settings)
+
+    def _get_enabled_modes(self):
+        enabled = [m for m in self.all_modes if self.settings['modes'].get(m)]
+        return enabled
+
+    def _apply_equalizer_settings(self):
+        if not self.audio_presets_manager:
+            return
+        preset = self.settings['equalizer'].get('preset', 'Flat')
+        self.audio_presets_manager.set_preset(preset)
+        desired_enabled = self.settings['equalizer'].get('enabled', False)
+        if desired_enabled and not self.audio_presets_manager.enabled:
+            self.audio_presets_manager.toggle_equalizer(self.stream_player.player)
+        elif not desired_enabled and self.audio_presets_manager.enabled:
+            self.audio_presets_manager.toggle_equalizer(self.stream_player.player)
+
+    def _get_settings_ui_items(self):
+        eq_enabled = "ON" if (self.audio_presets_manager and self.audio_presets_manager.enabled) else "OFF"
+        preset = self.audio_presets_manager.current_preset_name if self.audio_presets_manager else "Flat"
+        items = [
+            {'label': 'Equalizer', 'value': eq_enabled},
+            {'label': 'EQ Preset', 'value': preset}
+        ]
+        for mode in self.all_modes:
+            status = "ON" if self.settings['modes'].get(mode, False) else "OFF"
+            items.append({'label': f"Mode: {mode}", 'value': status})
+        items.append({'label': 'Close Settings', 'value': ''})
+        return items
+
+    def _announce_settings_item(self):
+        if not self.accessibility_manager:
+            return
+        items = self._get_settings_ui_items()
+        if not items:
+            return
+        idx = max(0, min(self.settings_cursor, len(items) - 1))
+        item = items[idx]
+        label = item.get('label', '')
+        value = item.get('value', '')
+        if value:
+            self.accessibility_manager.speak(f"{label}, {value}")
+        else:
+            self.accessibility_manager.speak(label)
+
+    def _handle_settings_keydown(self, event):
+        key = event.key
+        if key in (pygame.K_ESCAPE, pygame.K_o):
+            self._close_settings_panel()
+            return
+        if key == pygame.K_UP:
+            self.settings_cursor = (self.settings_cursor - 1) % len(self.settings_items)
+            self._announce_settings_item()
+            return
+        if key == pygame.K_DOWN:
+            self.settings_cursor = (self.settings_cursor + 1) % len(self.settings_items)
+            self._announce_settings_item()
+            return
+        if key in (pygame.K_RETURN, pygame.K_LEFT, pygame.K_RIGHT):
+            direction = 1
+            if key == pygame.K_LEFT:
+                direction = -1
+            self._activate_settings_item(direction)
+
+    def _activate_settings_item(self, direction=1):
+        item = self.settings_items[self.settings_cursor]
+        if item == 'eq_enabled':
+            self._toggle_equalizer()
+            self.settings['equalizer']['enabled'] = self.audio_presets_manager.enabled if self.audio_presets_manager else False
+            self._save_settings()
+            self._announce_settings_item()
+            return
+
+        if item == 'eq_preset':
+            self._cycle_audio_preset(direction)
+            if self.audio_presets_manager:
+                self.settings['equalizer']['preset'] = self.audio_presets_manager.current_preset_name
+                self._save_settings()
+            self._announce_settings_item()
+            return
+
+        if item.startswith('mode_'):
+            mode = item.replace('mode_', '')
+            current = self.settings['modes'].get(mode, False)
+            enabled_count = sum(1 for v in self.settings['modes'].values() if v)
+            if current and enabled_count == 1:
+                self._set_ui_message("At least one mode must stay on")
+                return
+            self.settings['modes'][mode] = not current
+            self.modes = self._get_enabled_modes()
+            if self.mode not in self.modes and self.modes:
+                self._switch_mode(self.modes[0])
+            self._save_settings()
+            self._announce_settings_item()
+            return
+
+        if item == 'close':
+            self._close_settings_panel()
+
+    def _handle_settings_event(self, event):
+        if event.type == pygame.KEYDOWN:
+            self._handle_settings_keydown(event)
+
+    def _open_settings_panel(self):
+        self.settings_panel_open = True
+        self.settings_cursor = 0
+        self.input_mode = None
+        self.input_text = ""
+        self._suppress_next_textinput = False
+        pygame.event.clear()
+        if self.accessibility_manager:
+            self.accessibility_manager.speak("Settings menu")
+        self._announce_settings_item()
+
+    def _close_settings_panel(self):
+        self.settings_panel_open = False
+        pygame.event.clear()
+        if self.accessibility_manager:
+            self.accessibility_manager.speak("Settings closed")
 

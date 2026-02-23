@@ -101,7 +101,8 @@ def main():
         accessibility_manager=accessibility_manager,
         history_manager=history_manager,
         timer_manager=timer_manager,
-        audio_presets_manager=audio_presets_manager
+        audio_presets_manager=audio_presets_manager,
+        config_manager=config_manager
     )
     
     # 4. Run

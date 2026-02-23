@@ -84,6 +84,10 @@ class PygameRenderer:
         if state.get('input_mode'):
             self._draw_input_modal(state['input_mode'], state.get('input_text', ''))
 
+        # Settings is a true modal and must stay on top.
+        if state.get('settings_open'):
+            self._draw_settings_panel(state)
+
         pygame.display.flip()
 
     def _draw_input_modal(self, mode, text):
@@ -281,3 +285,36 @@ class PygameRenderer:
         pygame.draw.rect(self.screen, self.colors['panel_bg'], (box_x, box_y, box_w, box_h))
         pygame.draw.rect(self.screen, self.colors['accent'], (box_x, box_y, box_w, box_h), 1)
         self.screen.blit(surface, (box_x + pad_x, box_y + pad_y))
+
+    def _draw_settings_panel(self, state):
+        overlay = pygame.Surface((self.width, self.height))
+        overlay.set_alpha(150)
+        overlay.fill((0, 0, 0))
+        self.screen.blit(overlay, (0, 0))
+
+        box_width, box_height = 520, 320
+        box_x = (self.width - box_width) // 2
+        box_y = (self.height - box_height) // 2
+
+        pygame.draw.rect(self.screen, self.colors['panel_bg'], (box_x, box_y, box_width, box_height))
+        pygame.draw.rect(self.screen, self.colors['accent'], (box_x, box_y, box_width, box_height), 2)
+
+        self._draw_text("SETTINGS", self.font_medium, self.colors['accent'], (box_x + 20, box_y + 16))
+
+        items = state.get('settings_items', [])
+        cursor = state.get('settings_cursor', 0)
+
+        row_y = box_y + 56
+        for i, item in enumerate(items):
+            label = item.get('label', '')
+            value = item.get('value', '')
+            color = self.colors['text_main']
+            if i == cursor:
+                pygame.draw.rect(self.screen, (55, 55, 55), (box_x + 14, row_y - 3, box_width - 28, 28))
+                color = self.colors['accent']
+            self._draw_text(label, self.font_small, color, (box_x + 24, row_y))
+            self._draw_text(value, self.font_small, color, (box_x + box_width - 120, row_y))
+            row_y += 32
+
+        hint = "UP/DOWN select  LEFT/RIGHT/ENTER change  O/ESC close"
+        self._draw_text(hint, self.font_small, self.colors['text_dim'], (box_x + 20, box_y + box_height - 28))
