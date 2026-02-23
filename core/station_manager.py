@@ -2,13 +2,15 @@ import requests
 import random
 
 class StationManager:
-    def __init__(self, config_manager=None, region_detector=None):
+    def __init__(self, config_manager=None, region_detector=None, twitch_manager=None, soundcloud_manager=None):
         # Default server to avoid blocking start
         self.base_url = "https://de1.api.radio-browser.info/json/stations"
         print(f"Using default API Server: {self.base_url}")
         
         self.config_manager = config_manager
         self.region_detector = region_detector
+        self.twitch_manager = twitch_manager
+        self.soundcloud_manager = soundcloud_manager
         self.stations = {
             'local': [],
             'national': [],
@@ -20,15 +22,41 @@ class StationManager:
             'international': [],
             'favorites': [] # Shared or separate? Plan said separate keys maybe?
         }
+        self.twitch_stations = []
+        self.soundcloud_stations = []
         
         # Load Cache
         self.cache_file = "stations_cache.json"
         self._load_cache()
 
         self.custom_bands = {}
+        self.custom_bands_migrated = False
         if self.config_manager:
-            # FIX: Assign the loaded data to self.custom_bands
-            self.custom_bands = self.config_manager.load_json("custom_bands.json", {})
+            # Load and migrate custom bands to per-mode format
+            loaded = self.config_manager.load_json("custom_bands.json", {})
+            migrated = self._migrate_custom_bands(loaded)
+            self.custom_bands = migrated
+            if migrated is not loaded:
+                self.config_manager.save_json("custom_bands.json", migrated)
+                self.custom_bands_migrated = True
+
+    def _migrate_custom_bands(self, data):
+        if not isinstance(data, dict):
+            return {'radio': {}, 'tv': {}, 'twitch': {}, 'soundcloud': {}}
+        
+        # If already per-mode
+        if any(k in data for k in ('radio', 'tv', 'twitch', 'soundcloud')):
+            for k in ('radio', 'tv', 'twitch', 'soundcloud'):
+                data.setdefault(k, {})
+            return data
+        
+        # Legacy flat dict: assume radio
+        return {
+            'radio': data,
+            'tv': {},
+            'twitch': {},
+            'soundcloud': {}
+        }
 
     def _ensure_server(self):
         """
@@ -190,13 +218,24 @@ class StationManager:
                 
         self.stations['exploratory'] = combined[:limit]
 
-    def save_custom_band(self, name, stations):
-        if not name or not stations: return
-        self.custom_bands[name] = stations
+    def save_custom_band(self, name, stations, mode='radio'):
+        if not name or not stations: 
+            return
+        if mode not in self.custom_bands:
+            self.custom_bands[mode] = {}
+        self.custom_bands[mode][name] = stations
         if self.config_manager:
             self.config_manager.save_json("custom_bands.json", self.custom_bands)
 
     def get_station_list(self, band, mode='radio'):
+        if mode == 'twitch':
+            if band == 'twitch':
+                return self.twitch_stations
+            return []
+        if mode == 'soundcloud':
+            if band == 'soundcloud':
+                return self.soundcloud_stations
+            return []
         if mode == 'tv':
             # TV Logic
             if band in self.tv_stations:
@@ -211,9 +250,37 @@ class StationManager:
         # Radio Logic
         if band in self.stations:
             return self.stations[band]
-        if band in self.custom_bands:
-            return self.custom_bands[band]
+        if mode in self.custom_bands and band in self.custom_bands[mode]:
+            return self.custom_bands[mode][band]
         return []
+
+    # --- TWITCH MODE SUPPORT ---
+
+    def fetch_twitch_streams(self):
+        if not self.twitch_manager:
+            return []
+        stations = self.twitch_manager.fetch_streams()
+        if stations:
+            self.twitch_stations = stations
+        return stations
+
+    def fetch_twitch_streams_by_query(self, query):
+        if not self.twitch_manager:
+            return []
+        stations = self.twitch_manager.fetch_streams_by_query(query)
+        if stations:
+            self.twitch_stations = stations
+        return stations
+
+    # --- SOUNDCLOUD MODE SUPPORT ---
+
+    def fetch_soundcloud_tracks(self, query):
+        if not self.soundcloud_manager:
+            return []
+        stations = self.soundcloud_manager.fetch_tracks(query)
+        if stations:
+            self.soundcloud_stations = stations
+        return stations
 
     def _fetch(self, url, limit, params=None):
         try:

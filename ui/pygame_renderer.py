@@ -38,12 +38,23 @@ class PygameRenderer:
         mode = state.get('mode', 'radio')
         if mode == 'tv':
             self.colors['accent'] = (0, 200, 255) # Cyan for TV
+        elif mode == 'twitch':
+            self.colors['accent'] = (255, 120, 40) # Amber for Twitch
+        elif mode == 'soundcloud':
+            self.colors['accent'] = (255, 85, 0) # SoundCloud Orange
         else:
             self.colors['accent'] = (255, 165, 0) # Orange for Radio
             
         # Draw Header
         self._draw_text("The Internet Analog Radio", self.font_large, self.colors['accent'], (20, 20))
-        tagline = "Rediscover your music the old way" if mode == 'radio' else "Broadcast Television (Audio Only)"
+        if mode == 'radio':
+            tagline = "Rediscover your music the old way"
+        elif mode == 'tv':
+            tagline = "Broadcast Television (Audio Only)"
+        elif mode == 'soundcloud':
+            tagline = "SoundCloud (Audio Only)"
+        else:
+            tagline = "Twitch Live (Audio Only)"
         self._draw_text(tagline, self.font_tagline, self.colors['text_dim'], (20, 60))
         
         # Draw Mode Indicator
@@ -64,6 +75,10 @@ class PygameRenderer:
 
         # NEW: Draw Feature Status Bar
         self._draw_feature_status(state)
+
+        # Draw transient UI message if present
+        if state.get('ui_message'):
+            self._draw_ui_message(state['ui_message'])
 
         # Draw Input Modal if active
         if state.get('input_mode'):
@@ -119,7 +134,7 @@ class PygameRenderer:
         if mode == 'radio':
             frequency = state.get('frequency', 88.0)
             main_text = f"{frequency:.1f} MHz"
-        else:
+        elif mode == 'tv':
             # TV Mode
             idx = state.get('channel_index', 1)
             total = state.get('total_channels', 0)
@@ -127,13 +142,44 @@ class PygameRenderer:
                 main_text = f"CH {idx} / {total}"
             else:
                  main_text = "Scanning..."
+        elif mode == 'soundcloud':
+            idx = state.get('channel_index', 1)
+            total = state.get('total_channels', 0)
+            if total > 0:
+                main_text = f"TRK {idx} / {total}"
+            else:
+                main_text = "Search..."
+        else:
+            # Twitch Mode
+            idx = state.get('channel_index', 1)
+            total = state.get('total_channels', 0)
+            if total > 0:
+                main_text = f"LIVE {idx} / {total}"
+            else:
+                main_text = "Fetching..."
         
         self._draw_text(main_text, self.font_large, self.colors['accent'], (50, 60 + y_offset))
         
         if station:
             name = station.get('name', 'Unknown Station')
-            country = station.get('country', 'Unknown Region')
-            bitrate = str(station.get('bitrate', '?')) + " kbps"
+            if mode == 'twitch':
+                category = station.get('category') or station.get('country', 'Twitch')
+                viewers = station.get('viewers', 0)
+                bitrate = f"{viewers} viewers"
+                country = category
+            elif mode == 'soundcloud':
+                artist = station.get('artist', 'Unknown Artist')
+                genre = station.get('genre', '')
+                duration = station.get('duration', 0)
+                minutes = duration // 60
+                seconds = duration % 60
+                dur_str = f"{minutes}:{seconds:02d}" if duration else "?:??"
+                plays = station.get('playback_count', 0)
+                bitrate = f"{dur_str} | {plays} plays" if plays else dur_str
+                country = f"{artist} | {genre}" if genre else artist
+            else:
+                country = station.get('country', 'Unknown Region')
+                bitrate = str(station.get('bitrate', '?')) + " kbps"
             
             self._draw_text(name, self.font_medium, self.colors['text_main'], (50, 110 + y_offset))
             self._draw_text(f"{country} | {bitrate}", self.font_small, self.colors['text_dim'], (50, 150 + y_offset))
@@ -220,3 +266,18 @@ class PygameRenderer:
             # Draw text
             self._draw_text(status_text, self.font_small, self.colors['accent'], 
                           (20, y_pos))
+
+    def _draw_ui_message(self, text):
+        # Simple toast at bottom center
+        pad_x = 16
+        pad_y = 8
+        surface = self.font_small.render(text, True, self.colors['text_main'])
+        text_w, text_h = surface.get_size()
+        box_w = text_w + (pad_x * 2)
+        box_h = text_h + (pad_y * 2)
+        box_x = (self.width - box_w) // 2
+        box_y = self.height - box_h - 8
+        
+        pygame.draw.rect(self.screen, self.colors['panel_bg'], (box_x, box_y, box_w, box_h))
+        pygame.draw.rect(self.screen, self.colors['accent'], (box_x, box_y, box_w, box_h), 1)
+        self.screen.blit(surface, (box_x + pad_x, box_y + pad_y))

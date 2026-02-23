@@ -2,3 +2,4 @@ pygame
 python-vlc
 requests
 cytolk
+streamlink

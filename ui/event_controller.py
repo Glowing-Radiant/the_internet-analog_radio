@@ -4,6 +4,7 @@ import os
 import random
 from core.static_generator import StaticGenerator
 import threading
+from core.twitch_resolver import TwitchResolver
 
 class EventController:
     def __init__(self, station_manager, favorites_manager, stream_player, renderer, accessibility_manager=None, 
@@ -20,8 +21,9 @@ class EventController:
         self.audio_presets_manager = audio_presets_manager
         
         self.bands = ['local', 'national', 'international', 'favorites', 'history', 'exploratory']
-        # Append custom bands
-        self.bands.extend(self.station_manager.custom_bands.keys())
+        # Append custom bands (radio by default)
+        if isinstance(self.station_manager.custom_bands, dict):
+            self.bands.extend(self.station_manager.custom_bands.get('radio', {}).keys())
         
         self.current_band_index = 1 # Default to National
         self.band_indices = {b: 0 for b in self.bands}
@@ -38,11 +40,17 @@ class EventController:
         self.input_mode = None # 'search', 'url', 'history', or 'timer'
         self.input_text = ""
         self.last_search_query = ""
+        self._suppress_next_textinput = False
+        self.ui_message = None
+        self.ui_message_until = 0
         
         self.running = True
 
         # Mode: 'radio' or 'tv'
         self.mode = 'radio'
+        self.modes = ['radio', 'tv']
+        self.twitch_resolver = TwitchResolver()
+        self._twitch_fail_notice_until = 0
         
         # Cache for closest station to avoid recalculating every frame
         self._cached_closest = None
@@ -96,9 +104,12 @@ class EventController:
                 else:
                     self._handle_keydown(event)
             elif event.type == pygame.TEXTINPUT and self.input_mode:
-                self.input_text += event.text
-                if self.accessibility_manager:
-                    self.accessibility_manager.speak(event.text)
+                if self._suppress_next_textinput:
+                    self._suppress_next_textinput = False
+                else:
+                    self.input_text += event.text
+                    if self.accessibility_manager:
+                        self.accessibility_manager.speak(event.text)
 
     def _handle_input(self, event):
         if event.key == pygame.K_RETURN:
@@ -164,12 +175,14 @@ class EventController:
             pygame.event.clear() 
             self.input_mode = 'search'
             self.input_text = ""
+            self._suppress_next_textinput = True
             if self.accessibility_manager:
                 self.accessibility_manager.speak("Search Station")
         elif key == pygame.K_f:
             pygame.event.clear()
             self.input_mode = 'url'
             self.input_text = ""
+            self._suppress_next_textinput = True
             if self.accessibility_manager:
                 self.accessibility_manager.speak("Enter Stream URL")
         elif key == pygame.K_w:
@@ -209,6 +222,7 @@ class EventController:
                 pygame.event.clear()
                 self.input_mode = 'timer'
                 self.input_text = ""
+                self._suppress_next_textinput = True
                 if self.accessibility_manager:
                     self.accessibility_manager.speak("Set Sleep Timer (minutes)")
         # NEW: Equalizer controls (E key)
@@ -218,6 +232,10 @@ class EventController:
         elif key == pygame.K_p:
             direction = -1 if (mods & pygame.KMOD_SHIFT) else 1
             self._cycle_audio_preset(direction)
+
+    def _set_ui_message(self, text, duration_ms=1500):
+        self.ui_message = text
+        self.ui_message_until = pygame.time.get_ticks() + duration_ms
 
     def _submit_search(self):
         print(f"Searching for: {self.input_text}")
@@ -698,7 +716,15 @@ class EventController:
         self._update_audio_mixing()
 
     def _add_favorite(self):
-        station = self._get_current_station()
+        if self.mode == 'radio':
+            station, dist = self._get_closest_station()
+            if not station or dist > self.tuning_bandwidth:
+                if self.accessibility_manager:
+                    self.accessibility_manager.speak("No station selected")
+                self._set_ui_message("No station selected")
+                return
+        else:
+            station = self._get_current_station()
         if station:
             if self.favorites_manager.add_favorite(station, self.mode):
                 print(f"Added to favorites ({self.mode}): {station.get('name')}")
@@ -773,7 +799,8 @@ class EventController:
                 self.accessibility_manager.speak("Could not remove")
 
     def _toggle_mode(self):
-        self.mode = 'tv' if self.mode == 'radio' else 'radio'
+        current_index = self.modes.index(self.mode)
+        self.mode = self.modes[(current_index + 1) % len(self.modes)]
         print(f"Switched to Mode: {self.mode.upper()}")
         
         if self.accessibility_manager:
@@ -793,12 +820,13 @@ class EventController:
                     self.station_manager.fetch_tv_all() 
                     
                 threading.Thread(target=fetch_tv, daemon=True).start()
+
                 
         # Rebuild Bands for the new Mode
         standard_bands = ['local', 'national', 'international', 'favorites', 'history', 'exploratory']
         
         # Get custom bands for this mode
-        custom = self.station_manager.custom_bands.get(self.mode, {})
+        custom = self.station_manager.custom_bands.get(self.mode, {}) if hasattr(self.station_manager, 'custom_bands') else {}
         
         self.bands = standard_bands + list(custom.keys())
         
@@ -807,10 +835,17 @@ class EventController:
             if b not in self.band_indices:
                 self.band_indices[b] = 0
 
-        # Reset band index to National (1) or 0
-        self.current_band_index = 1 
+        # Reset band index
+        self.current_band_index = 1
         if self.current_band_index >= len(self.bands):
              self.current_band_index = 0 
+
+        # One-time notice after migration
+        if getattr(self.station_manager, "custom_bands_migrated", False):
+            self._set_ui_message("Custom bands migrated to per-mode format")
+            if self.accessibility_manager:
+                self.accessibility_manager.speak("Custom bands migrated")
+            self.station_manager.custom_bands_migrated = False
         
     def _render(self):
         # Get channel info
@@ -818,6 +853,13 @@ class EventController:
         total_channels = len(stations) if stations else 0
         band = self.bands[self.current_band_index]
         channel_index = self.band_indices.get(band, 0) + 1 # 1-based index
+
+        ui_message = None
+        if self.ui_message and pygame.time.get_ticks() <= self.ui_message_until:
+            ui_message = self.ui_message
+        elif self.ui_message:
+            self.ui_message = None
+            self.ui_message_until = 0
         
         state = {
             'mode': self.mode,
@@ -834,7 +876,8 @@ class EventController:
             'timer_active': self.timer_manager.is_active() if self.timer_manager else False,
             'timer_remaining': self.timer_manager.format_remaining_time() if self.timer_manager else None,
             'equalizer_enabled': self.audio_presets_manager.enabled if self.audio_presets_manager else False,
-            'equalizer_preset': self.audio_presets_manager.current_preset_name if self.audio_presets_manager else None
+            'equalizer_preset': self.audio_presets_manager.current_preset_name if self.audio_presets_manager else None,
+            'ui_message': ui_message
         }
         
         # fix: _get_closest_station returns (station, dist)
@@ -931,4 +974,21 @@ class EventController:
         print(f"Preset: {preset_name}")
         if self.accessibility_manager:
             self.accessibility_manager.speak(f"Preset {preset_name}")
+
+    def _resolve_twitch_url(self, url):
+        if not url or not url.startswith("twitch://"):
+            return url
+        login = url.replace("twitch://", "").strip()
+        if not login:
+            return None
+        
+        play_url = self.twitch_resolver.resolve(login)
+        if not play_url:
+            now = pygame.time.get_ticks()
+            if now >= self._twitch_fail_notice_until:
+                self._set_ui_message("Twitch stream unavailable (install streamlink?)")
+                if self.accessibility_manager:
+                    self.accessibility_manager.speak("Twitch stream unavailable")
+                self._twitch_fail_notice_until = now + 3000
+        return play_url
 

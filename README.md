@@ -15,7 +15,7 @@ The Internet Analog Radio is a minimalist, keyboard-driven internet radio player
     *   **Favorites**: Your saved stations.
     *   **🆕 History**: Your recently played stations (up to 100 entries).
     *   **Exploratory**: Search for specific genres or names.
-*   **Custom Bands**: Save your search results as permanent bands (e.g., "Jazz", "News").
+*   **Custom Bands**: Save your search results as permanent bands (e.g., "Jazz", "News"). Custom bands are stored per mode (Radio/TV).
 *   **Accessibility First**: Fully accessible with screen readers (NVDA, JAWS, Narrator) via `cytolk`.
 *   **Keyboard Control**: Designed for completely mouse-free operation.
 *   **Dual Mode**: Switch between **Radio Mode** (Analog tuning) and **TV Mode** (Direct Channel Indexing).
@@ -118,10 +118,12 @@ python main.py
 
 Configuration files are stored in the `config/` directory:
 *   `favorites.json`: Stores your favorite stations.
-*   `custom_bands.json`: Stores your saved custom bands.
+*   `custom_bands.json`: Stores your saved custom bands (per mode).
 *   `user_region.json`: Caches your detected location.
 *   **🆕** `history.json`: Stores your playback history (up to 100 entries per mode).
 *   **🆕** `audio_presets.json`: Stores your custom audio equalizer presets.
+
+Note: Twitch and SoundCloud integrations exist in code but are currently disabled in the UI until credentials are configured and the mode list is re-enabled.
 
 ## License
 
