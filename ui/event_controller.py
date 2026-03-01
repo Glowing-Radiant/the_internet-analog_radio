@@ -276,10 +276,10 @@ class EventController:
         query = self.input_text
 
         def search_thread():
-            self.station_manager.search_stations(query)
+            self.station_manager.search_stations(query, mode=self.mode)
             
             # Post-search checks
-            stations = self.station_manager.get_station_list('exploratory')
+            stations = self.station_manager.get_station_list('exploratory', self.mode)
             if not stations:
                  print("Nothing found.")
                  if self.accessibility_manager:
@@ -662,7 +662,7 @@ class EventController:
         self.current_band_index = (self.current_band_index + direction) % len(self.bands)
         # Skip exploratory if empty and not current
         if self.bands[self.current_band_index] == 'exploratory':
-             if not self.station_manager.get_station_list('exploratory'):
+             if not self.station_manager.get_station_list('exploratory', self.mode):
                  self.current_band_index = (self.current_band_index + direction) % len(self.bands)
         
         band_name = self.bands[self.current_band_index]
@@ -1058,7 +1058,7 @@ class EventController:
         if mode == 'radio':
             standard_bands = ['local', 'national', 'international', 'favorites', 'history', 'exploratory']
         elif mode == 'tv':
-            standard_bands = ['national', 'international', 'favorites', 'history']
+            standard_bands = ['national', 'international', 'favorites', 'history', 'exploratory']
         elif mode == 'twitch':
             standard_bands = ['twitch', 'favorites', 'history']
         elif mode == 'soundcloud':

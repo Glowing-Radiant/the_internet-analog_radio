@@ -1,5 +1,6 @@
 import requests
 import random
+import re
 
 class StationManager:
     def __init__(self, config_manager=None, region_detector=None, twitch_manager=None, soundcloud_manager=None):
@@ -20,6 +21,7 @@ class StationManager:
         self.tv_stations = {
             'national': [],
             'international': [],
+            'exploratory': [],
             'favorites': [] # Shared or separate? Plan said separate keys maybe?
         }
         self.twitch_stations = []
@@ -192,8 +194,13 @@ class StationManager:
         if self.config_manager:
             self.config_manager.save_json(self.cache_file, self.stations)
 
-    def search_stations(self, query, limit=50):
-        if not query: return
+    def search_stations(self, query, limit=50, mode='radio'):
+        if not query:
+            return
+
+        if mode == 'tv':
+            self.search_tv_stations(query, limit)
+            return
         
         # Search by name
         url_name = f"{self.base_url}/search"
@@ -206,17 +213,53 @@ class StationManager:
         stations_name = self._fetch(url_name, limit, params=params_name)
         stations_tag = self._fetch(url_tag, limit, params=params_tag)
         
-        # Combine and deduplicate by UUID
-        seen_uuids = set()
-        combined = []
-        
-        for s in stations_name + stations_tag:
-            uuid = s.get('stationuuid')
-            if uuid not in seen_uuids:
-                seen_uuids.add(uuid)
-                combined.append(s)
-                
+        combined = self._dedupe_stations(stations_name + stations_tag)
         self.stations['exploratory'] = combined[:limit]
+
+    def search_tv_stations(self, query, limit=100):
+        if not query:
+            self.tv_stations['exploratory'] = []
+            return []
+
+        # Reuse the same TV API-backed bands already fetched for TV mode.
+        if not self.tv_stations['national'] and not self.tv_stations['international']:
+            self.fetch_tv_all()
+
+        pool = self.tv_stations.get('national', []) + self.tv_stations.get('international', [])
+        if not pool:
+            self.tv_stations['exploratory'] = []
+            return []
+
+        terms = [term.strip().lower() for term in query.split() if term.strip()]
+        matches = []
+        for station in pool:
+            haystack = " ".join([
+                str(station.get('name', '')),
+                str(station.get('country', '')),
+                str(station.get('group', '')),
+                str(station.get('tvg_id', '')),
+                str(station.get('tvg_name', ''))
+            ]).lower()
+            if all(term in haystack for term in terms):
+                matches.append(station)
+
+        self.tv_stations['exploratory'] = self._dedupe_stations(matches)[:limit]
+        return self.tv_stations['exploratory']
+
+    def _dedupe_stations(self, stations):
+        seen = set()
+        deduped = []
+        for station in stations:
+            key = (
+                station.get('stationuuid')
+                or station.get('url_resolved')
+                or f"{station.get('name', '')}|{station.get('country', '')}"
+            )
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            deduped.append(station)
+        return deduped
 
     def save_custom_band(self, name, stations, mode='radio'):
         if not name or not stations: 
@@ -240,11 +283,8 @@ class StationManager:
             # TV Logic
             if band in self.tv_stations:
                 return self.tv_stations[band]
-            # Custom bands might be shared or prefixed? 
-            # For now, let's assume custom bands are shared or not implemented for TV yet.
-            # But the user said "following the same band convension... add to favorites".
-            # So we probably want separate favorites for TV?
-            # Let's return empty if not found in tv_stations standard bands
+            if mode in self.custom_bands and band in self.custom_bands[mode]:
+                return self.custom_bands[mode][band]
             return []
             
         # Radio Logic
@@ -425,12 +465,17 @@ class StationManager:
                 name = "Unknown TV"
                 if len(parts) > 1:
                     name = parts[1].strip()
+
+                attrs = self._parse_m3u_attrs(parts[0])
                 
                 # We could parse other tags but Name is most important
                 current_station = {
                     'name': name,
                     'bitrate': 0, # TV usually high
-                    'country': 'TV'
+                    'country': attrs.get('tvg-country', 'TV'),
+                    'group': attrs.get('group-title', ''),
+                    'tvg_id': attrs.get('tvg-id', ''),
+                    'tvg_name': attrs.get('tvg-name', '')
                 }
             elif not line.startswith("#"):
                 # URL
@@ -445,3 +490,6 @@ class StationManager:
         #    self._assign_frequencies(stations)
             
         return stations
+
+    def _parse_m3u_attrs(self, extinf_head):
+        return dict(re.findall(r'([a-zA-Z0-9_-]+)="([^"]*)"', extinf_head))
