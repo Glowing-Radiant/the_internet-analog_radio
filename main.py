@@ -57,10 +57,6 @@ def main():
     print(f"Detected Region Info: {region_info}")
     
     country_code = region_info.get('countryCode') if region_info else None
-    city = region_info.get('city') if region_info else None
-    
-    lat = region_info.get('lat') if region_info else None
-    lon = region_info.get('lon') if region_info else None
     
     station_manager = StationManager(config_manager, region_detector)
     
@@ -68,7 +64,7 @@ def main():
     import threading
     def fetch_async():
         print("Fetching stations in background...")
-        station_manager.fetch_all(country_code, city, lat, lon)
+        station_manager.fetch_all(country_code)
         print("Stations fetched.")
         
     fetch_thread = threading.Thread(target=fetch_async, daemon=True)

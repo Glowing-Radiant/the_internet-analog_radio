@@ -11,7 +11,6 @@ class StationManager:
         self.config_manager = config_manager
         self.region_detector = region_detector
         self.stations = {
-            'local': [],
             'national': [],
             'international': [],
             'exploratory': []
@@ -93,24 +92,14 @@ class StationManager:
                 
         return "https://de1.api.radio-browser.info/json/stations"
 
-    def fetch_all(self, country_code=None, city=None, lat=None, lon=None):
+    def fetch_all(self, country_code=None):
         # This runs in thread, so we can block to find server
         self._ensure_server()
         
-        # If no location provided, try region detector if available
-        if not lat and not lon and self.region_detector:
+        # If no country was provided, try region detector if available.
+        if not country_code and self.region_detector:
              region = self.region_detector.get_region()
-             lat = region.get('lat')
-             lon = region.get('lon')
-             city = region.get('city')
-             if not country_code:
-                 country_code = region.get('countryCode')
-
-        if lat and lon:
-            self.fetch_local(lat, lon)
-        elif city:
-             # Fallback to city search if no lat/lon
-             self.stations['local'] = self._fetch(f"{self.base_url}/bycity/{city}", 20)
+             country_code = region.get('countryCode')
              
         if country_code:
             self.fetch_national(country_code)
@@ -123,20 +112,6 @@ class StationManager:
         if data:
             self.stations['national'] = data
             self._save_cache()
-
-    def fetch_local(self, lat, lon):
-        # Fetch by geo, radius 50km
-        print(f"Fetching Local Stations for {lat}, {lon}")
-        url = f"{self.base_url}/bygeo/{lat}/{lon}/50"
-        data = self._fetch(url, 20)
-        if data:
-            print(f"Found {len(data)} local stations")
-            self.stations['local'] = data
-            self._save_cache()
-        else:
-            print("No local stations found")
-            # Try city?
-            # self.stations['local'] = self._fetch(f"{self.base_url}/bycity/...", 20)
 
     def fetch_international(self, limit=50):
         # Fetch RANDOM stations for exploration (instead of topvote)

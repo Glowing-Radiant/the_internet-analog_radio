@@ -9,7 +9,6 @@ The Internet Analog Radio is a minimalist, keyboard-driven internet radio player
 *   **Analog Feel**: Simulates static noise and tuning delays for a nostalgic experience.
 *   **Global Station Database**: Powered by the [Radio-Browser API](https://www.radio-browser.info/), giving access to thousands of stations worldwide.
 *   **Intelligent Bands**:
-    *   **Local**: Automatically detects your location (via IP) to find nearby stations (using Geo-Coordinates).
     *   **National**: Top stations from your country.
     *   **International**: Top voted stations globally.
     *   **Favorites**: Your saved stations.
@@ -64,7 +63,7 @@ python main.py
 | **Left Arrow** | Radio: Tune Down (-0.1 MHz). Hold for smooth tuning. <br> TV/History: Prev Channel/Station. |
 | **Ctrl + Arrows** | Radio: Scan to next station (Debounced). |
 | **Up / Down** | Volume Control (Time-based smooth adjustment) |
-| **Tab** | Cycle Bands Forward (Local -> National -> International -> Favorites -> History -> Exploratory) |
+| **Tab** | Cycle Bands Forward (National -> International -> Favorites -> History -> Exploratory) |
 | **Shift + Tab** | Cycle Bands Backward |
 | **Ctrl + Tab** | **Switch Mode (Radio / TV)** |
 | **+ (Plus)** | Add current station to Favorites |

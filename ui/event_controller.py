@@ -20,12 +20,12 @@ class EventController:
         self.timer_manager = timer_manager
         self.audio_presets_manager = audio_presets_manager
         
-        self.bands = ['local', 'national', 'international', 'favorites', 'history', 'exploratory']
+        self.bands = ['national', 'international', 'favorites', 'history', 'exploratory']
         # Append custom bands (radio by default)
         if isinstance(self.station_manager.custom_bands, dict):
             self.bands.extend(self.station_manager.custom_bands.get('radio', {}).keys())
         
-        self.current_band_index = 1 # Default to National
+        self.current_band_index = 0 # Default to National
         self.band_indices = {b: 0 for b in self.bands}
         
         self.current_frequency = 88.0
@@ -65,7 +65,7 @@ class EventController:
         for b in self.bands:
             if b not in self.band_indices:
                 self.band_indices[b] = 0
-        self.current_band_index = 1 if len(self.bands) > 1 else 0
+        self.current_band_index = 0
         self._apply_equalizer_settings()
         
         # Cache for closest station to avoid recalculating every frame
@@ -717,10 +717,8 @@ class EventController:
         # Or just keep the frequency?
         # "let the user reach that frequency manually"
         # Keeping frequency simulates real radio where bands share frequency space?
-        # Actually FM is one band. 'Local', 'National' are virtual bands.
-        # But if we change 'band', we change the set of available stations.
-        # So we stay at 88.0, but now check checking Local stations at 88.0.
-        # This is cool.
+        # Bands are virtual pools, but keeping the same frequency preserves the
+        # analog-radio feel when moving between station sets.
         
         # self._play_current_station() # Removed
 
@@ -909,9 +907,7 @@ class EventController:
                 self.band_indices[b] = 0
 
         # Reset band index
-        self.current_band_index = 1 if len(self.bands) > 1 else 0
-        if self.current_band_index >= len(self.bands):
-             self.current_band_index = 0 
+        self.current_band_index = 0
 
         # One-time notice after migration
         if getattr(self.station_manager, "custom_bands_migrated", False):
@@ -1057,7 +1053,7 @@ class EventController:
 
     def _build_bands_for_mode(self, mode):
         if mode == 'radio':
-            standard_bands = ['local', 'national', 'international', 'favorites', 'history', 'exploratory']
+            standard_bands = ['national', 'international', 'favorites', 'history', 'exploratory']
         elif mode == 'tv':
             standard_bands = ['national', 'international', 'favorites', 'history', 'exploratory']
         else:
