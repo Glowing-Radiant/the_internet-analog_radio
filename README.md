@@ -2,12 +2,13 @@
 
 **"Rediscover your music the old way"**
 
-The Internet Analog Radio is a minimalist, keyboard-driven internet radio player designed to simulate the tactile experience of an analog radio. It features static noise effects during tuning, a retro-style interface, and full screen reader accessibility.
+The Internet Analog Radio is a minimalist, keyboard-driven radio player designed to simulate the tactile experience of tuning a physical receiver. It has a digital internet-station mode, a live analog KiwiSDR mode, static noise effects during tuning, a retro-style interface, and full screen reader accessibility.
 
 ## Features
 
-*   **Analog Feel**: Simulates static noise and tuning delays for a nostalgic experience.
-*   **Global Station Database**: Powered by the [Radio-Browser API](https://www.radio-browser.info/), giving access to thousands of stations worldwide.
+*   **Digital Radio Mode**: Powered by the [Radio-Browser API](https://www.radio-browser.info/), giving access to thousands of internet stations worldwide through the existing analog-style dial.
+*   **Analog Radio Mode**: Uses live KiwiSDR receivers through the upstream [jks-prv/kiwiclient](https://github.com/jks-prv/kiwiclient) tools.
+*   **Analog Feel**: Simulates static noise and tuning delays for a nostalgic experience in frequency-based modes.
 *   **Intelligent Bands**:
     *   **National**: Top stations from your country.
     *   **International**: Top voted stations globally.
@@ -17,7 +18,7 @@ The Internet Analog Radio is a minimalist, keyboard-driven internet radio player
 *   **Custom Bands**: Save your search results as permanent bands (e.g., "Jazz", "News"). Custom bands are stored per mode (Radio/TV).
 *   **Accessibility First**: Fully accessible with screen readers (NVDA, JAWS, Narrator) via `cytolk`.
 *   **Keyboard Control**: Designed for completely mouse-free operation.
-*   **Dual Mode**: Switch between **Radio Mode** (Analog tuning) and **TV Mode** (Direct Channel Indexing).
+*   **Multi Mode**: Switch between **Digital Radio**, **Analog Radio**, and **TV Mode**.
 *   **🆕 Playback History**: Automatically tracks your listening history with timestamps and duration. Access via the History band.
 *   **🆕 Sleep Timer**: Set a timer to automatically stop playback after a specified duration with smooth fade-out.
 *   **🆕 Audio Equalizer**: Built-in equalizer with 10 preset modes (Rock, Jazz, Classical, Speech, Bass Boost, etc.) for enhanced audio.
@@ -27,6 +28,11 @@ The Internet Analog Radio is a minimalist, keyboard-driven internet radio player
 *   **Clean Audio**: No static noise simulation in TV mode.
 *   **Auto-Country**: Automatically finds National TV channels for your location.
 
+## Analog Radio Mode Features
+*   **KiwiSDR Support**: Fetches public KiwiSDR receivers and exposes shortwave tuning targets.
+*   **Real Frequency Display**: Analog mode tunes in kHz across the HF range.
+*   **External Client Playback**: Playback uses `kiwirecorder.py` from the upstream KiwiClient project.
+
 ## Requirements
 
 *   Python 3.8+
@@ -34,6 +40,7 @@ The Internet Analog Radio is a minimalist, keyboard-driven internet radio player
     *   Windows: [Download VLC](https://www.videolan.org/vlc/download-windows.html)
     *   macOS: [Download VLC](https://www.videolan.org/vlc/download-macosx.html)
     *   Linux: `sudo apt install vlc` (or equivalent)
+*   **Optional for Analog Radio**: A local clone or download of [jks-prv/kiwiclient](https://github.com/jks-prv/kiwiclient) with its dependencies installed.
 
 ## Installation
 
@@ -48,6 +55,28 @@ The Internet Analog Radio is a minimalist, keyboard-driven internet radio player
     pip install -r requirements.txt
     ```
 
+3.  To enable Analog Radio playback, install KiwiClient and point this app at it:
+    ```bash
+    git clone https://github.com/jks-prv/kiwiclient.git
+    set KIWI_CLIENT_DIR=C:\path\to\kiwiclient
+    ```
+
+    You can also create `config/analog_radio.json`:
+    ```json
+    {
+        "kiwi_client_dir": "C:\\path\\to\\kiwiclient",
+        "refresh_public_receivers": false,
+        "receivers": [
+            {
+                "name": "My KiwiSDR",
+                "url": "http://example.com:8073",
+                "country": "Local"
+            }
+        ]
+    }
+    ```
+    The app does not contact the public KiwiSDR directory by default. Set `refresh_public_receivers` to `true` only if you want to refresh from `kiwisdr.com/.public/`. The `receivers` list is optional. Use it when the public KiwiSDR directory is unreachable or you want known-good receivers.
+
 ## Usage
 
 Run the application:
@@ -59,13 +88,13 @@ python main.py
 
 | Key | Action |
 | :--- | :--- |
-| **Right Arrow** | Radio: Tune Up (+0.1 MHz). Hold for smooth tuning. <br> TV/History: Next Channel/Station. |
-| **Left Arrow** | Radio: Tune Down (-0.1 MHz). Hold for smooth tuning. <br> TV/History: Prev Channel/Station. |
-| **Ctrl + Arrows** | Radio: Scan to next station (Debounced). |
+| **Right Arrow** | Digital Radio: Tune Up (+0.1 MHz). Analog Radio: Tune Up (+1 kHz). <br> TV/History: Next Channel/Station. |
+| **Left Arrow** | Digital Radio: Tune Down (-0.1 MHz). Analog Radio: Tune Down (-1 kHz). <br> TV/History: Prev Channel/Station. |
+| **Ctrl + Arrows** | Frequency modes: Scan to next station (Debounced). |
 | **Up / Down** | Volume Control (Time-based smooth adjustment) |
 | **Tab** | Cycle Bands Forward (National -> International -> Favorites -> History -> Exploratory) |
 | **Shift + Tab** | Cycle Bands Backward |
-| **Ctrl + Tab** | **Switch Mode (Radio / TV)** |
+| **Ctrl + Tab** | **Switch Mode (Digital Radio / Analog Radio / TV)** |
 | **+ (Plus)** | Add current station to Favorites |
 | **- (Minus)** | Remove current station from Favorites |
 | **M** | Toggle Mute |
@@ -116,8 +145,10 @@ python main.py
 ## Configuration
 
 Configuration files are stored in the `config/` directory:
-*   `favorites.json`: Stores your favorite stations.
-*   `custom_bands.json`: Stores your saved custom bands (per mode).
+*   `favorites.json`: Stores your favorite stations per mode.
+*   `custom_bands.json`: Stores your saved custom bands per mode.
+*   `analog_radio.json`: Optional KiwiClient path configuration.
+*   `kiwi_receivers_cache.json`: Last successful public KiwiSDR receiver list.
 *   `user_region.json`: Caches your detected location.
 *   **🆕** `history.json`: Stores your playback history (up to 100 entries per mode).
 *   **🆕** `audio_presets.json`: Stores your custom audio equalizer presets.

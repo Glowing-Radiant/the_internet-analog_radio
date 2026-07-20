@@ -4,6 +4,15 @@ import os
 import random
 from core.static_generator import StaticGenerator
 import threading
+from core.modes import (
+    ALL_MODES,
+    FREQUENCY_MODES,
+    MODE_ANALOG_RADIO,
+    MODE_DIGITAL_RADIO,
+    MODE_TV,
+    mode_label,
+    normalize_mode,
+)
 
 class EventController:
     def __init__(self, station_manager, favorites_manager, stream_player, renderer, accessibility_manager=None, 
@@ -21,9 +30,9 @@ class EventController:
         self.audio_presets_manager = audio_presets_manager
         
         self.bands = ['national', 'international', 'favorites', 'history', 'exploratory']
-        # Append custom bands (radio by default)
+        # Append custom bands for the default digital radio mode.
         if isinstance(self.station_manager.custom_bands, dict):
-            self.bands.extend(self.station_manager.custom_bands.get('radio', {}).keys())
+            self.bands.extend(self.station_manager.custom_bands.get(MODE_DIGITAL_RADIO, {}).keys())
         
         self.current_band_index = 0 # Default to National
         self.band_indices = {b: 0 for b in self.bands}
@@ -46,9 +55,9 @@ class EventController:
         
         self.running = True
 
-        self.all_modes = ['radio', 'tv']
-        self.mode = 'radio'
-        self.modes = ['radio', 'tv']
+        self.all_modes = list(ALL_MODES)
+        self.mode = MODE_DIGITAL_RADIO
+        self.modes = list(ALL_MODES)
         self.ui_sounds = self._load_ui_sounds()
 
         self.settings_panel_open = False
@@ -57,8 +66,8 @@ class EventController:
         self.settings = self._load_settings()
         self.modes = self._get_enabled_modes()
         if not self.modes:
-            self.settings['modes']['radio'] = True
-            self.modes = ['radio']
+            self.settings['modes'][MODE_DIGITAL_RADIO] = True
+            self.modes = [MODE_DIGITAL_RADIO]
 
         self.mode = self.modes[0]
         self.bands = self._build_bands_for_mode(self.mode)
@@ -372,8 +381,8 @@ class EventController:
             # Get fade multiplier
             timer_fade_multiplier = self.timer_manager.get_fade_volume_multiplier()
         
-        # Non-radio modes: direct index playback
-        if self.mode != 'radio':
+        # Non-frequency modes: direct index playback
+        if self.mode not in FREQUENCY_MODES:
             station = self._get_current_station()
             
             # Reset Static
@@ -393,7 +402,7 @@ class EventController:
                     final_vol = self.user_volume * timer_fade_multiplier  # Apply timer fade
                     if self.is_muted: final_vol = 0.0
                     
-                    self.stream_player.play(url)
+                    self.stream_player.play_station(station)
                     self.stream_player.set_volume(final_vol)
                     
                     # Announce if new
@@ -410,7 +419,7 @@ class EventController:
                     self.history_manager.stop_tracking(self.mode)
             return
 
-        # RADIO MODE: Frequency Logic
+        # FREQUENCY MODE: analog-style tuning logic
         # 1. Get Closest Station
         closest_station, distance = self._get_closest_station()
         
@@ -471,11 +480,11 @@ class EventController:
             # 3. Control Stream Player
             # Only play if URL is valid and volume is audible
             if current_station_url and final_station_vol > 0:
-                self.stream_player.play(current_station_url)
+                self.stream_player.play_station(closest_station)
                 self.stream_player.set_volume(final_station_vol)
             else:
                  if current_station_url:
-                     self.stream_player.play(current_station_url)
+                     self.stream_player.play_station(closest_station)
                      self.stream_player.set_volume(final_station_vol)
 
             # Announce
@@ -589,7 +598,7 @@ class EventController:
         # Radio: 0.1 MHz step
         # TV: 1 Channel step
         
-        if self.mode != 'radio':
+        if self.mode not in FREQUENCY_MODES:
              # Non-radio mode navigation
              REPEAT_DELAY = 8 # Slightly slower for channel surfing
              
@@ -609,8 +618,8 @@ class EventController:
                  self._tuning_delay = 0
 
         else:
-            # RADIO NAVIGATION (Frequency)
-            tuning_speed = 0.1 
+            # FREQUENCY NAVIGATION
+            tuning_speed = 0.1 if self.mode == MODE_DIGITAL_RADIO else 1.0
             current_time = pygame.time.get_ticks()
 
             if not hasattr(self, '_tuning_next_time'):
@@ -628,14 +637,14 @@ class EventController:
                              self.current_frequency = round(self.current_frequency, 1)
                              self._tuning_next_time = current_time + 100 # Repeat every 100ms
                              # Wrap
-                             if self.current_frequency > 108.0: self.current_frequency = 87.5
+                             self._wrap_current_frequency()
                      else:
                          # New Press (Tap)
                          self._tuning_key = 'RIGHT'
                          self.current_frequency += tuning_speed
                          self.current_frequency = round(self.current_frequency, 1)
                          self._tuning_next_time = current_time + 500 # Initial delay 500ms
-                         if self.current_frequency > 108.0: self.current_frequency = 87.5
+                         self._wrap_current_frequency()
             
             elif keys[pygame.K_LEFT]:
                  if not (pygame.key.get_mods() & pygame.KMOD_CTRL):
@@ -646,14 +655,14 @@ class EventController:
                              self.current_frequency -= tuning_speed
                              self.current_frequency = round(self.current_frequency, 1)
                              self._tuning_next_time = current_time + 100
-                             if self.current_frequency < 87.5: self.current_frequency = 108.0
+                             self._wrap_current_frequency()
                      else:
                          # New
                          self._tuning_key = 'LEFT'
                          self.current_frequency -= tuning_speed
                          self.current_frequency = round(self.current_frequency, 1)
                          self._tuning_next_time = current_time + 500
-                         if self.current_frequency < 87.5: self.current_frequency = 108.0
+                         self._wrap_current_frequency()
             
             if not is_turning:
                 # Reset state
@@ -695,6 +704,18 @@ class EventController:
             if target is None: target = freqs[-1] # Wrap
             
         self.current_frequency = target
+
+    def _wrap_current_frequency(self):
+        if self.mode == MODE_ANALOG_RADIO:
+            if self.current_frequency > 30000.0:
+                self.current_frequency = 10.0
+            elif self.current_frequency < 10.0:
+                self.current_frequency = 30000.0
+        else:
+            if self.current_frequency > 108.0:
+                self.current_frequency = 87.5
+            elif self.current_frequency < 87.5:
+                self.current_frequency = 108.0
 
     def _cycle_band(self, direction=1):
         self.current_band_index = (self.current_band_index + direction) % len(self.bands)
@@ -786,7 +807,7 @@ class EventController:
         self._update_audio_mixing()
 
     def _add_favorite(self):
-        if self.mode == 'radio':
+        if self.mode in FREQUENCY_MODES:
             station, dist = self._get_closest_station()
             if not station or dist > self.tuning_bandwidth:
                 if self.accessibility_manager:
@@ -881,12 +902,16 @@ class EventController:
             return
         self.mode = mode
         print(f"Switched to Mode: {self.mode.upper()}")
+        if self.mode == MODE_ANALOG_RADIO and self.current_frequency < 1000.0:
+            self.current_frequency = 10000.0
+        elif self.mode == MODE_DIGITAL_RADIO and not 87.5 <= self.current_frequency <= 108.0:
+            self.current_frequency = 88.0
         
         if self.accessibility_manager:
-            self.accessibility_manager.speak(f"{self.mode} mode")
+            self.accessibility_manager.speak(f"{mode_label(self.mode)} mode")
             
         # Lazy load TV data
-        if self.mode == 'tv':
+        if self.mode == MODE_TV:
             # Check if we have stations, if not, fetch (threaded)
             # Just trigger fetch generally
             if not self.station_manager.tv_stations['national']:
@@ -899,6 +924,18 @@ class EventController:
                     self.station_manager.fetch_tv_all() 
                     
                 threading.Thread(target=fetch_tv, daemon=True).start()
+        elif self.mode == MODE_ANALOG_RADIO:
+            self.station_manager.ensure_analog_fallback()
+            if (not getattr(self.station_manager, 'analog_receivers_refreshed', False)
+                    and self.station_manager._should_refresh_public_kiwi_receivers()):
+                print("First time analog init: Fetching KiwiSDR receivers...")
+                if self.accessibility_manager:
+                    self.accessibility_manager.speak("Fetching Kiwi S D R receivers")
+
+                def fetch_analog():
+                    self.station_manager.fetch_analog_all()
+
+                threading.Thread(target=fetch_analog, daemon=True).start()
         self.bands = self._build_bands_for_mode(self.mode)
         
         # Initialize indices for new bands if missing
@@ -954,7 +991,7 @@ class EventController:
         
         # fix: _get_closest_station returns (station, dist)
         # _get_current_station returns (station)
-        if self.mode == 'radio':
+        if self.mode in FREQUENCY_MODES:
              state['current_station'] = self._get_closest_station()[0]
         else:
              state['current_station'] = self._get_current_station()
@@ -1052,9 +1089,12 @@ class EventController:
         self._save_settings()
 
     def _build_bands_for_mode(self, mode):
-        if mode == 'radio':
+        mode = normalize_mode(mode)
+        if mode == MODE_DIGITAL_RADIO:
             standard_bands = ['national', 'international', 'favorites', 'history', 'exploratory']
-        elif mode == 'tv':
+        elif mode == MODE_ANALOG_RADIO:
+            standard_bands = ['international', 'favorites', 'history', 'exploratory']
+        elif mode == MODE_TV:
             standard_bands = ['national', 'international', 'favorites', 'history', 'exploratory']
         else:
             standard_bands = ['favorites', 'history']
@@ -1065,8 +1105,9 @@ class EventController:
     def _load_settings(self):
         defaults = {
             'modes': {
-                'radio': True,
-                'tv': True
+                MODE_DIGITAL_RADIO: True,
+                MODE_ANALOG_RADIO: True,
+                MODE_TV: True
             },
             'equalizer': {
                 'enabled': False,
@@ -1085,9 +1126,10 @@ class EventController:
             'equalizer': dict(defaults['equalizer'])
         }
         if isinstance(loaded_modes, dict):
-            for mode in self.all_modes:
-                if mode in loaded_modes:
-                    settings['modes'][mode] = bool(loaded_modes[mode])
+            for loaded_mode, value in loaded_modes.items():
+                mode = normalize_mode(loaded_mode)
+                if mode in self.all_modes:
+                    settings['modes'][mode] = bool(value)
         if isinstance(loaded_eq, dict):
             if 'enabled' in loaded_eq:
                 settings['equalizer']['enabled'] = bool(loaded_eq['enabled'])
@@ -1123,7 +1165,7 @@ class EventController:
         ]
         for mode in self.all_modes:
             status = "ON" if self.settings['modes'].get(mode, False) else "OFF"
-            items.append({'label': f"Mode: {mode}", 'value': status})
+            items.append({'label': f"Mode: {mode_label(mode)}", 'value': status})
         items.append({'label': 'Close Settings', 'value': ''})
         return items
 

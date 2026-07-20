@@ -2,6 +2,7 @@ import json
 import os
 from datetime import datetime
 from typing import List, Dict, Optional
+from .modes import ALL_MODES, MODE_DIGITAL_RADIO, MODE_TV, normalize_mode
 
 class HistoryManager:
     """
@@ -14,28 +15,34 @@ class HistoryManager:
         self.max_entries = max_entries
         
         # Load history from config
-        # Format: {'radio': [...], 'tv': [...]}
+        # Format: {'digital_radio': [...], 'analog_radio': [...], 'tv': [...]}
         # Each entry: {'station': {...}, 'timestamp': '...', 'duration': seconds}
-        raw_data = self.config_manager.load_json("history.json", default={'radio': [], 'tv': []})
+        raw_data = self.config_manager.load_json("history.json", default={MODE_DIGITAL_RADIO: [], MODE_TV: []})
         
         # Ensure both modes exist
         if isinstance(raw_data, list):
             # Migration from old format if needed
-            self.history = {'radio': raw_data, 'tv': []}
+            self.history = {MODE_DIGITAL_RADIO: raw_data, MODE_TV: []}
         else:
-            self.history = raw_data if isinstance(raw_data, dict) else {}
+            self.history = {}
+            if isinstance(raw_data, dict):
+                for key, value in raw_data.items():
+                    mode = normalize_mode(key)
+                    if isinstance(value, list):
+                        self.history.setdefault(mode, []).extend(value)
             
-        if 'radio' not in self.history:
-            self.history['radio'] = []
-        if 'tv' not in self.history:
-            self.history['tv'] = []
-        self.history = {mode: self.history.get(mode, []) for mode in ('radio', 'tv')}
+        for mode in ALL_MODES:
+            if mode not in self.history:
+                self.history[mode] = []
+        self.history = {mode: self.history.get(mode, []) for mode in ALL_MODES}
             
         # Track current playing station to calculate duration
-        self.current_playing = {'radio': None, 'tv': None}
-        self.current_start_time = {'radio': None, 'tv': None}
+        self.current_playing = {mode: None for mode in ALL_MODES}
+        self.current_start_time = {mode: None for mode in ALL_MODES}
+        self._current_station_data = {}
         
     def start_tracking(self, station: Dict, mode: str = 'radio'):
+        mode = normalize_mode(mode)
         """
         Start tracking a station. Called when playback begins.
         """
@@ -43,7 +50,8 @@ class HistoryManager:
             return
             
         # If same station, don't restart tracking
-        if self.current_playing.get(mode) == station.get('url_resolved'):
+        station_key = self._station_key(station)
+        if self.current_playing.get(mode) == station_key:
             return
             
         # Save previous station if exists
@@ -51,11 +59,12 @@ class HistoryManager:
             self._save_current_session(mode)
         
         # Start new session
-        self.current_playing[mode] = station.get('url_resolved')
+        self.current_playing[mode] = station_key
         self.current_start_time[mode] = datetime.now()
-        self._current_station_data = {mode: station.copy()}
+        self._current_station_data[mode] = station.copy()
         
     def _save_current_session(self, mode: str):
+        mode = normalize_mode(mode)
         """
         Save the current playing session to history.
         """
@@ -86,12 +95,12 @@ class HistoryManager:
         history_list.insert(0, entry)
         
         # Remove duplicates (keep most recent)
-        seen_urls = set()
+        seen_keys = set()
         unique_history = []
         for item in history_list:
-            url = item['station'].get('url_resolved')
-            if url not in seen_urls:
-                seen_urls.add(url)
+            key = self._station_key(item['station'])
+            if key not in seen_keys:
+                seen_keys.add(key)
                 unique_history.append(item)
                 
         # Limit size
@@ -101,6 +110,7 @@ class HistoryManager:
         self._save_history()
         
     def stop_tracking(self, mode: str = 'radio'):
+        mode = normalize_mode(mode)
         """
         Stop tracking current station. Called when playback stops.
         """
@@ -109,6 +119,7 @@ class HistoryManager:
         self.current_start_time[mode] = None
         
     def get_history(self, mode: str = 'radio', limit: Optional[int] = None) -> List[Dict]:
+        mode = normalize_mode(mode)
         """
         Get history entries for a mode.
         Returns list of entries sorted by most recent first.
@@ -119,6 +130,7 @@ class HistoryManager:
         return history
         
     def get_recent_stations(self, mode: str = 'radio', limit: int = 10) -> List[Dict]:
+        mode = normalize_mode(mode)
         """
         Get just the station data from recent history.
         """
@@ -126,6 +138,7 @@ class HistoryManager:
         return [entry['station'] for entry in history if 'station' in entry]
         
     def clear_history(self, mode: str = 'radio'):
+        mode = normalize_mode(mode)
         """
         Clear all history for a mode.
         """
@@ -162,3 +175,10 @@ class HistoryManager:
         station_name = station.get('name', 'Unknown')
         
         return f"{station_name} - {time_str} ({duration_str})"
+
+    def _station_key(self, station: Dict):
+        return (
+            station.get('url_resolved'),
+            station.get('kiwi_frequency_khz'),
+            station.get('kiwi_mode'),
+        )

@@ -1,6 +1,7 @@
 import pygame
 import math
 import os
+from core.modes import MODE_ANALOG_RADIO, MODE_DIGITAL_RADIO, MODE_TV, mode_label, normalize_mode
 
 class PygameRenderer:
     def __init__(self, width=800, height=450): # Increased height slightly for tagline
@@ -35,22 +36,26 @@ class PygameRenderer:
         self.screen.fill(self.colors['bg'])
         
         # Mode Logic
-        mode = state.get('mode', 'radio')
-        if mode == 'tv':
+        mode = normalize_mode(state.get('mode', MODE_DIGITAL_RADIO))
+        if mode == MODE_TV:
             self.colors['accent'] = (0, 200, 255) # Cyan for TV
+        elif mode == MODE_ANALOG_RADIO:
+            self.colors['accent'] = (120, 220, 120) # Green for live SDR
         else:
             self.colors['accent'] = (255, 165, 0) # Orange for Radio
             
         # Draw Header
         self._draw_text("The Internet Analog Radio", self.font_large, self.colors['accent'], (20, 20))
-        if mode == 'radio':
-            tagline = "Rediscover your music the old way"
+        if mode == MODE_DIGITAL_RADIO:
+            tagline = "Internet stations with classic dial tuning"
+        elif mode == MODE_ANALOG_RADIO:
+            tagline = "Live shortwave through KiwiSDR receivers"
         else:
             tagline = "Broadcast Television (Audio Only)"
         self._draw_text(tagline, self.font_tagline, self.colors['text_dim'], (20, 60))
         
         # Draw Mode Indicator
-        self._draw_text(f"MODE: {mode.upper()}", self.font_small, self.colors['accent'], (650, 20))
+        self._draw_text(f"MODE: {mode_label(mode).upper()}", self.font_small, self.colors['accent'], (610, 20))
         
         # Draw Main Display (Adjusted Y position)
         self._draw_main_display(state)
@@ -61,8 +66,8 @@ class PygameRenderer:
         # Draw Volume
         self._draw_volume(state)
         
-        # Draw Dial (Visual flair) - Only for Radio
-        if mode == 'radio':
+        # Draw Dial (Visual flair) - Only for frequency modes
+        if mode in (MODE_DIGITAL_RADIO, MODE_ANALOG_RADIO):
             self._draw_dial(state)
 
         # NEW: Draw Feature Status Bar
@@ -122,15 +127,18 @@ class PygameRenderer:
 
     def _draw_main_display(self, state):
         station = state.get('current_station')
-        mode = state.get('mode', 'radio')
+        mode = normalize_mode(state.get('mode', MODE_DIGITAL_RADIO))
         
         # Shifted down slightly to accommodate tagline
         y_offset = 30 
         
-        if mode == 'radio':
+        if mode == MODE_DIGITAL_RADIO:
             frequency = state.get('frequency', 88.0)
             main_text = f"{frequency:.1f} MHz"
-        elif mode == 'tv':
+        elif mode == MODE_ANALOG_RADIO:
+            frequency = state.get('frequency', 10000.0)
+            main_text = f"{frequency:.0f} kHz"
+        elif mode == MODE_TV:
             # TV Mode
             idx = state.get('channel_index', 1)
             total = state.get('total_channels', 0)
@@ -151,12 +159,15 @@ class PygameRenderer:
         if station:
             name = station.get('name', 'Unknown Station')
             country = station.get('country', 'Unknown Region')
-            bitrate = str(station.get('bitrate', '?')) + " kbps"
+            if station.get('source') == 'kiwi':
+                detail = f"{station.get('kiwi_mode', 'am').upper()} | {station.get('kiwi_frequency_khz', '?')} kHz"
+            else:
+                detail = str(station.get('bitrate', '?')) + " kbps"
             
             self._draw_text(name, self.font_medium, self.colors['text_main'], (50, 110 + y_offset))
-            self._draw_text(f"{country} | {bitrate}", self.font_small, self.colors['text_dim'], (50, 150 + y_offset))
+            self._draw_text(f"{country} | {detail}", self.font_small, self.colors['text_dim'], (50, 150 + y_offset))
         else:
-            if mode == 'radio':
+            if mode in (MODE_DIGITAL_RADIO, MODE_ANALOG_RADIO):
                 self._draw_text("Static...", self.font_medium, self.colors['text_dim'], (50, 110 + y_offset))
             else:
                  self._draw_text("No Signal / Loading...", self.font_medium, self.colors['text_dim'], (50, 110 + y_offset))
@@ -187,11 +198,14 @@ class PygameRenderer:
         pygame.draw.circle(self.screen, self.colors['text_dim'], center, radius, 2)
         
         # Calculate angle based on frequency
-        # Range 87.5 to 108.0
-        # Map to -135 to +135 degrees (3/4 circle)
         freq = state.get('frequency', 88.0)
-        min_freq = 87.5
-        max_freq = 108.0
+        mode = normalize_mode(state.get('mode', MODE_DIGITAL_RADIO))
+        if mode == MODE_ANALOG_RADIO:
+            min_freq = 10.0
+            max_freq = 30000.0
+        else:
+            min_freq = 87.5
+            max_freq = 108.0
         
         pct = (freq - min_freq) / (max_freq - min_freq)
         pct = max(0.0, min(1.0, pct))

@@ -1,13 +1,31 @@
 import vlc
 import time
 import threading
+from core.kiwi_player import KiwiClientPlayer
 
 class StreamPlayer:
-    def __init__(self):
-        self.instance = vlc.Instance('--no-video')
+    def __init__(self, config_manager=None):
+        self.instance = vlc.Instance('--no-video', '--quiet')
         self.player = self.instance.media_player_new()
+        self.kiwi_player = KiwiClientPlayer(config_manager)
         self.current_url = None
         self.master_volume = 1.0
+        self._last_play_attempt_at = 0
+        self._failed_url = None
+        self._failed_url_until = 0
+
+    def play_station(self, station):
+        if not station:
+            return False
+        if station.get('source') == 'kiwi':
+            if self.current_url:
+                self.player.stop()
+                self.current_url = None
+            return self.kiwi_player.play_station(station)
+        if self.kiwi_player.current_station or self.kiwi_player.process:
+            self.kiwi_player.stop()
+        self.play(station.get('url_resolved'))
+        return True
 
     def play(self, url):
         """
@@ -15,15 +33,31 @@ class StreamPlayer:
         Stops previous stream automatically.
         """
         if not url: return
+        if self.kiwi_player.current_station or self.kiwi_player.process:
+            self.kiwi_player.stop()
 
         # Optimization: If already playing this URL, do nothing
         if self.current_url == url:
+             state = self.player.get_state()
+             active_states = {vlc.State.Opening, vlc.State.Buffering, vlc.State.Playing}
+             if state in active_states:
+                 return
+
+             now = time.monotonic()
+             if url == self._failed_url and now < self._failed_url_until:
+                 return
+             if now - self._last_play_attempt_at < 2.0:
+                 return
+
+             if state in {vlc.State.Error, vlc.State.Ended}:
+                 self._failed_url = url
+                 self._failed_url_until = now + 5.0
+                 return
+
              if not self.player.is_playing():
                  # Valid states to resume/play from
-                 state = self.player.get_state()
-                 active_states = {vlc.State.Opening, vlc.State.Buffering, vlc.State.Playing}
-                 if state not in active_states:
-                     self.player.play()
+                 self._last_play_attempt_at = now
+                 self.player.play()
              return
 
         # New URL
@@ -35,6 +69,9 @@ class StreamPlayer:
             self.player.set_media(media)
             self.player.audio_set_volume(0) # Start silent
             self.player.play()
+            self._last_play_attempt_at = time.monotonic()
+            self._failed_url = None
+            self._failed_url_until = 0
             self.current_url = url
             # Reset volume tracking so next set_volume works effectively
             self._last_set_volume = 0
@@ -47,6 +84,9 @@ class StreamPlayer:
         Sets volume for the current stream. 
         Volume 0.0 to 1.0.
         """
+        if self.kiwi_player.current_station:
+            self.kiwi_player.set_volume(volume)
+            return
         vol = int(max(0.0, min(1.0, volume)) * 100)
         
         # Optimization: Don't spam VLC if volume hasn't effectively changed
@@ -72,16 +112,21 @@ class StreamPlayer:
         """
         Stops playback.
         """
-        self.player.stop()
+        if self.current_url:
+            self.player.stop()
+        if self.kiwi_player.current_station or self.kiwi_player.process:
+            self.kiwi_player.stop()
         self.current_url = None
 
     def is_playing(self):
-        return self.player.is_playing()
+        return self.player.is_playing() or self.kiwi_player.is_playing()
 
     def get_now_playing(self):
         """
         Returns the current metadata (Now Playing) if available.
         """
+        if self.kiwi_player.current_station:
+            return self.kiwi_player.get_now_playing()
         if not self.player.get_media():
             return "Unknown"
             
@@ -103,7 +148,7 @@ class StreamPlayer:
         return "Unknown"
 
     def update(self):
-        pass
+        self.kiwi_player.update()
     
     # Helper for legacy calls if any
     def cleanup_except(self, keep_urls):

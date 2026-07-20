@@ -71,7 +71,7 @@ def main():
     fetch_thread.start()
     
     favorites_manager = FavoritesManager(config_manager)
-    stream_player = StreamPlayer()
+    stream_player = StreamPlayer(config_manager)
     
     # NEW: Initialize new managers
     history_manager = HistoryManager(config_manager, max_entries=100)
