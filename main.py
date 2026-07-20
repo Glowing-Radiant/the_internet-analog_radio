@@ -11,8 +11,6 @@ from core.stream_player import StreamPlayer
 from core.history_manager import HistoryManager
 from core.timer_manager import TimerManager
 from core.audio_presets import AudioPresetsManager
-from core.twitch_manager import TwitchManager
-from core.soundcloud_manager import SoundCloudManager
 from ui.pygame_renderer import PygameRenderer
 from ui.event_controller import EventController
 from core.accessibility import AccessibilityManager
@@ -64,9 +62,7 @@ def main():
     lat = region_info.get('lat') if region_info else None
     lon = region_info.get('lon') if region_info else None
     
-    twitch_manager = TwitchManager(config_manager)
-    soundcloud_manager = SoundCloudManager(config_manager)
-    station_manager = StationManager(config_manager, region_detector, twitch_manager, soundcloud_manager)
+    station_manager = StationManager(config_manager, region_detector)
     
     # Threaded Fetch
     import threading

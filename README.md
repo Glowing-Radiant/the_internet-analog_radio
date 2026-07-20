@@ -123,7 +123,6 @@ Configuration files are stored in the `config/` directory:
 *   **🆕** `history.json`: Stores your playback history (up to 100 entries per mode).
 *   **🆕** `audio_presets.json`: Stores your custom audio equalizer presets.
 
-Note: Twitch and SoundCloud integrations exist in code but are currently disabled in the UI until credentials are configured and the mode list is re-enabled.
 
 ## License
 

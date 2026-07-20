@@ -16,27 +16,24 @@ class HistoryManager:
         # Load history from config
         # Format: {'radio': [...], 'tv': [...]}
         # Each entry: {'station': {...}, 'timestamp': '...', 'duration': seconds}
-        raw_data = self.config_manager.load_json("history.json", default={'radio': [], 'tv': [], 'twitch': [], 'soundcloud': []})
+        raw_data = self.config_manager.load_json("history.json", default={'radio': [], 'tv': []})
         
         # Ensure both modes exist
         if isinstance(raw_data, list):
             # Migration from old format if needed
-            self.history = {'radio': raw_data, 'tv': [], 'twitch': [], 'soundcloud': []}
+            self.history = {'radio': raw_data, 'tv': []}
         else:
-            self.history = raw_data
+            self.history = raw_data if isinstance(raw_data, dict) else {}
             
         if 'radio' not in self.history:
             self.history['radio'] = []
         if 'tv' not in self.history:
             self.history['tv'] = []
-        if 'twitch' not in self.history:
-            self.history['twitch'] = []
-        if 'soundcloud' not in self.history:
-            self.history['soundcloud'] = []
+        self.history = {mode: self.history.get(mode, []) for mode in ('radio', 'tv')}
             
         # Track current playing station to calculate duration
-        self.current_playing = {'radio': None, 'tv': None, 'twitch': None, 'soundcloud': None}
-        self.current_start_time = {'radio': None, 'tv': None, 'twitch': None, 'soundcloud': None}
+        self.current_playing = {'radio': None, 'tv': None}
+        self.current_start_time = {'radio': None, 'tv': None}
         
     def start_tracking(self, station: Dict, mode: str = 'radio'):
         """

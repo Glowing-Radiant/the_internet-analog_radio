@@ -4,8 +4,6 @@ import os
 import random
 from core.static_generator import StaticGenerator
 import threading
-from core.twitch_resolver import TwitchResolver
-from core.soundcloud_resolver import SoundCloudResolver
 
 class EventController:
     def __init__(self, station_manager, favorites_manager, stream_player, renderer, accessibility_manager=None, 
@@ -48,15 +46,10 @@ class EventController:
         
         self.running = True
 
-        self.all_modes = ['radio', 'tv', 'twitch', 'soundcloud']
+        self.all_modes = ['radio', 'tv']
         self.mode = 'radio'
         self.modes = ['radio', 'tv']
-        self.twitch_resolver = TwitchResolver()
-        self._twitch_fail_notice_until = 0
-        self.soundcloud_resolver = None
-        if self.station_manager.soundcloud_manager:
-            client_id = self.station_manager.soundcloud_manager.config.get('client_id', '')
-            self.soundcloud_resolver = SoundCloudResolver(client_id)
+        self.ui_sounds = self._load_ui_sounds()
 
         self.settings_panel_open = False
         self.settings_cursor = 0
@@ -92,6 +85,38 @@ class EventController:
         # Just start static at 0 volume so it's ready
         self.static_generator.play()
         self.static_generator.set_volume(0.0)
+
+    def _load_ui_sounds(self):
+        sound_files = {
+            'click': 'UI_Click.wav',
+            'menu_open': 'menu_open.ogg',
+            'menu_close': 'menu_close.ogg',
+            'input_start': 'UI_Recording_Start.ogg',
+            'input_stop': 'UI_Recording_Stop.ogg',
+            'timer_reset': 'GP_Timer_Reset.ogg',
+            'mode_start': 'GP_MenuStart_Intro.ogg'
+        }
+        sounds = {}
+        for name, filename in sound_files.items():
+            path = os.path.join("sounds", filename)
+            if not os.path.exists(path):
+                continue
+            try:
+                sound = pygame.mixer.Sound(path)
+                sound.set_volume(0.35)
+                sounds[name] = sound
+            except Exception as e:
+                print(f"Failed to load UI sound {filename}: {e}")
+        return sounds
+
+    def _play_ui_sound(self, name):
+        sound = self.ui_sounds.get(name)
+        if not sound:
+            return
+        try:
+            sound.play()
+        except Exception as e:
+            print(f"Failed to play UI sound {name}: {e}")
 
     def run(self):
         clock = pygame.time.Clock()
@@ -138,6 +163,7 @@ class EventController:
 
     def _handle_input(self, event):
         if event.key == pygame.K_RETURN:
+            self._play_ui_sound('input_stop')
             if self.input_mode == 'search':
                 self._submit_search()
             elif self.input_mode == 'url':
@@ -147,12 +173,14 @@ class EventController:
             self.input_mode = None
             self.input_text = ""
         elif event.key == pygame.K_ESCAPE:
+            self._play_ui_sound('menu_close')
             self.input_mode = None
             self.input_text = ""
             if self.accessibility_manager:
                 self.accessibility_manager.speak("Cancelled")
         elif event.key == pygame.K_BACKSPACE:
             if self.input_text:
+                self._play_ui_sound('click')
                 deleted = self.input_text[-1]
                 self.input_text = self.input_text[:-1]
                 if self.accessibility_manager:
@@ -173,6 +201,7 @@ class EventController:
         mods = event.mod
         
         if key == pygame.K_q:
+            self._play_ui_sound('menu_close')
             self.running = False
         elif key == pygame.K_o:
             if self.settings_panel_open:
@@ -184,24 +213,32 @@ class EventController:
             if mods & pygame.KMOD_CTRL:
                 self._toggle_mode()
             else:
+                self._play_ui_sound('click')
                 direction = -1 if (mods & pygame.KMOD_SHIFT) else 1
                 self._cycle_band(direction)
         elif key == pygame.K_RIGHT and (mods & pygame.KMOD_CTRL):
             # Scan Forward (Discrete)
+            self._play_ui_sound('click')
             self._scan_station(1)
         elif key == pygame.K_LEFT and (mods & pygame.KMOD_CTRL):
             # Scan Backward (Discrete)
+            self._play_ui_sound('click')
             self._scan_station(-1)
         elif key == pygame.K_m:
+            self._play_ui_sound('click')
             self._toggle_mute()
         elif key == pygame.K_PLUS or key == pygame.K_EQUALS:
+            self._play_ui_sound('click')
             self._add_favorite()
         elif key == pygame.K_MINUS:
+            self._play_ui_sound('click')
             self._remove_favorite()
         elif key == pygame.K_b:
+            self._play_ui_sound('click')
             self._save_custom_band()
         elif key == pygame.K_s:
             # Clear buffer before entering mode to prevent ghosting
+            self._play_ui_sound('input_start')
             pygame.event.clear() 
             self.input_mode = 'search'
             self.input_text = ""
@@ -209,6 +246,7 @@ class EventController:
             if self.accessibility_manager:
                 self.accessibility_manager.speak("Search Station")
         elif key == pygame.K_f:
+            self._play_ui_sound('input_start')
             pygame.event.clear()
             self.input_mode = 'url'
             self.input_text = ""
@@ -246,9 +284,11 @@ class EventController:
         elif key == pygame.K_t:
             if mods & pygame.KMOD_SHIFT:
                 # Shift+T: Cancel timer
+                self._play_ui_sound('timer_reset')
                 self._cancel_timer()
             else:
                 # T: Set timer
+                self._play_ui_sound('input_start')
                 pygame.event.clear()
                 self.input_mode = 'timer'
                 self.input_text = ""
@@ -257,9 +297,11 @@ class EventController:
                     self.accessibility_manager.speak("Set Sleep Timer (minutes)")
         # NEW: Equalizer controls (E key)
         elif key == pygame.K_e:
+            self._play_ui_sound('click')
             self._toggle_equalizer()
         # NEW: Preset cycling (P key)
         elif key == pygame.K_p:
+            self._play_ui_sound('click')
             direction = -1 if (mods & pygame.KMOD_SHIFT) else 1
             self._cycle_audio_preset(direction)
 
@@ -339,10 +381,6 @@ class EventController:
             
             if station:
                 url = station.get('url_resolved')
-                if self.mode == 'twitch':
-                    url = self._resolve_twitch_url(url)
-                elif self.mode == 'soundcloud':
-                    url = self._resolve_soundcloud_url(station)
                 # Play if valid
                 if url:
                     # NEW: Track history
@@ -837,6 +875,7 @@ class EventController:
             return
         current_index = self.modes.index(self.mode)
         next_mode = self.modes[(current_index + 1) % len(self.modes)]
+        self._play_ui_sound('mode_start')
         self._switch_mode(next_mode)
 
     def _switch_mode(self, mode):
@@ -862,17 +901,6 @@ class EventController:
                     self.station_manager.fetch_tv_all() 
                     
                 threading.Thread(target=fetch_tv, daemon=True).start()
-        elif self.mode == 'twitch':
-            if not self.station_manager.twitch_stations:
-                def fetch_twitch():
-                    self.station_manager.fetch_twitch_streams()
-                threading.Thread(target=fetch_twitch, daemon=True).start()
-        elif self.mode == 'soundcloud':
-            if not self.station_manager.soundcloud_stations:
-                def fetch_soundcloud():
-                    self.station_manager.fetch_soundcloud_tracks("music")
-                threading.Thread(target=fetch_soundcloud, daemon=True).start()
-
         self.bands = self._build_bands_for_mode(self.mode)
         
         # Initialize indices for new bands if missing
@@ -1027,42 +1055,11 @@ class EventController:
         self.settings['equalizer']['preset'] = preset_name
         self._save_settings()
 
-    def _resolve_twitch_url(self, url):
-        if not url or not url.startswith("twitch://"):
-            return url
-        login = url.replace("twitch://", "").strip()
-        if not login:
-            return None
-        
-        play_url = self.twitch_resolver.resolve(login)
-        if not play_url:
-            now = pygame.time.get_ticks()
-            if now >= self._twitch_fail_notice_until:
-                self._set_ui_message("Twitch stream unavailable (install streamlink?)")
-                if self.accessibility_manager:
-                    self.accessibility_manager.speak("Twitch stream unavailable")
-                self._twitch_fail_notice_until = now + 3000
-        return play_url
-
-    def _resolve_soundcloud_url(self, station):
-        if not station:
-            return None
-        url = station.get("url_resolved", "")
-        if url and not url.startswith("soundcloud://"):
-            return url
-        if not self.soundcloud_resolver:
-            return None
-        return self.soundcloud_resolver.resolve(station)
-
     def _build_bands_for_mode(self, mode):
         if mode == 'radio':
             standard_bands = ['local', 'national', 'international', 'favorites', 'history', 'exploratory']
         elif mode == 'tv':
             standard_bands = ['national', 'international', 'favorites', 'history', 'exploratory']
-        elif mode == 'twitch':
-            standard_bands = ['twitch', 'favorites', 'history']
-        elif mode == 'soundcloud':
-            standard_bands = ['soundcloud', 'favorites', 'history']
         else:
             standard_bands = ['favorites', 'history']
 
@@ -1073,9 +1070,7 @@ class EventController:
         defaults = {
             'modes': {
                 'radio': True,
-                'tv': True,
-                'twitch': False,
-                'soundcloud': False
+                'tv': True
             },
             'equalizer': {
                 'enabled': False,
@@ -1157,14 +1152,17 @@ class EventController:
             self._close_settings_panel()
             return
         if key == pygame.K_UP:
+            self._play_ui_sound('click')
             self.settings_cursor = (self.settings_cursor - 1) % len(self.settings_items)
             self._announce_settings_item()
             return
         if key == pygame.K_DOWN:
+            self._play_ui_sound('click')
             self.settings_cursor = (self.settings_cursor + 1) % len(self.settings_items)
             self._announce_settings_item()
             return
         if key in (pygame.K_RETURN, pygame.K_LEFT, pygame.K_RIGHT):
+            self._play_ui_sound('click')
             direction = 1
             if key == pygame.K_LEFT:
                 direction = -1
@@ -1210,6 +1208,7 @@ class EventController:
             self._handle_settings_keydown(event)
 
     def _open_settings_panel(self):
+        self._play_ui_sound('menu_open')
         self.settings_panel_open = True
         self.settings_cursor = 0
         self.input_mode = None
@@ -1221,6 +1220,7 @@ class EventController:
         self._announce_settings_item()
 
     def _close_settings_panel(self):
+        self._play_ui_sound('menu_close')
         self.settings_panel_open = False
         pygame.event.clear()
         if self.accessibility_manager:

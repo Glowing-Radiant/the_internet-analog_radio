@@ -6,27 +6,24 @@ class FavoritesManager:
         self.config_manager = config_manager
         
         # Load raw data
-        raw_data = self.config_manager.load_json("favorites.json", default={'radio': [], 'tv': [], 'twitch': [], 'soundcloud': []})
+        raw_data = self.config_manager.load_json("favorites.json", default={'radio': [], 'tv': []})
         
         # Migration: If it's a list, it's the old format (radio only)
         if isinstance(raw_data, list):
             self.favorites = {
                 'radio': raw_data,
-                'tv': [],
-                'twitch': [],
-                'soundcloud': []
+                'tv': []
             }
         else:
-            self.favorites = raw_data
+            self.favorites = raw_data if isinstance(raw_data, dict) else {}
             
         # Ensure keys exist if partial dict loaded
         if 'radio' not in self.favorites: self.favorites['radio'] = []
         if 'tv' not in self.favorites: self.favorites['tv'] = []
-        if 'twitch' not in self.favorites: self.favorites['twitch'] = []
-        if 'soundcloud' not in self.favorites: self.favorites['soundcloud'] = []
+        self.favorites = {mode: self.favorites.get(mode, []) for mode in ('radio', 'tv')}
             
         self._ensure_frequencies_all()
-        self.current_indices = {'radio': 0, 'tv': 0, 'twitch': 0, 'soundcloud': 0}
+        self.current_indices = {'radio': 0, 'tv': 0}
 
     def _ensure_frequencies_all(self):
         for mode in self.favorites:

@@ -38,10 +38,6 @@ class PygameRenderer:
         mode = state.get('mode', 'radio')
         if mode == 'tv':
             self.colors['accent'] = (0, 200, 255) # Cyan for TV
-        elif mode == 'twitch':
-            self.colors['accent'] = (255, 120, 40) # Amber for Twitch
-        elif mode == 'soundcloud':
-            self.colors['accent'] = (255, 85, 0) # SoundCloud Orange
         else:
             self.colors['accent'] = (255, 165, 0) # Orange for Radio
             
@@ -49,12 +45,8 @@ class PygameRenderer:
         self._draw_text("The Internet Analog Radio", self.font_large, self.colors['accent'], (20, 20))
         if mode == 'radio':
             tagline = "Rediscover your music the old way"
-        elif mode == 'tv':
-            tagline = "Broadcast Television (Audio Only)"
-        elif mode == 'soundcloud':
-            tagline = "SoundCloud (Audio Only)"
         else:
-            tagline = "Twitch Live (Audio Only)"
+            tagline = "Broadcast Television (Audio Only)"
         self._draw_text(tagline, self.font_tagline, self.colors['text_dim'], (20, 60))
         
         # Draw Mode Indicator
@@ -146,44 +138,20 @@ class PygameRenderer:
                 main_text = f"CH {idx} / {total}"
             else:
                  main_text = "Scanning..."
-        elif mode == 'soundcloud':
-            idx = state.get('channel_index', 1)
-            total = state.get('total_channels', 0)
-            if total > 0:
-                main_text = f"TRK {idx} / {total}"
-            else:
-                main_text = "Search..."
         else:
-            # Twitch Mode
             idx = state.get('channel_index', 1)
             total = state.get('total_channels', 0)
             if total > 0:
-                main_text = f"LIVE {idx} / {total}"
+                main_text = f"CH {idx} / {total}"
             else:
-                main_text = "Fetching..."
+                main_text = "Scanning..."
         
         self._draw_text(main_text, self.font_large, self.colors['accent'], (50, 60 + y_offset))
         
         if station:
             name = station.get('name', 'Unknown Station')
-            if mode == 'twitch':
-                category = station.get('category') or station.get('country', 'Twitch')
-                viewers = station.get('viewers', 0)
-                bitrate = f"{viewers} viewers"
-                country = category
-            elif mode == 'soundcloud':
-                artist = station.get('artist', 'Unknown Artist')
-                genre = station.get('genre', '')
-                duration = station.get('duration', 0)
-                minutes = duration // 60
-                seconds = duration % 60
-                dur_str = f"{minutes}:{seconds:02d}" if duration else "?:??"
-                plays = station.get('playback_count', 0)
-                bitrate = f"{dur_str} | {plays} plays" if plays else dur_str
-                country = f"{artist} | {genre}" if genre else artist
-            else:
-                country = station.get('country', 'Unknown Region')
-                bitrate = str(station.get('bitrate', '?')) + " kbps"
+            country = station.get('country', 'Unknown Region')
+            bitrate = str(station.get('bitrate', '?')) + " kbps"
             
             self._draw_text(name, self.font_medium, self.colors['text_main'], (50, 110 + y_offset))
             self._draw_text(f"{country} | {bitrate}", self.font_small, self.colors['text_dim'], (50, 150 + y_offset))
