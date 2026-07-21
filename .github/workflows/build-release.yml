@@ -19,8 +19,8 @@ jobs:
         os: [windows-latest]
         include:
           - os: windows-latest
-            artifact_name: InternetAnalogRadio.exe
-            asset_name: InternetAnalogRadio-windows.exe
+            artifact_name: InternetAnalogRadio-windows.zip
+            asset_name: InternetAnalogRadio-windows.zip
     
     steps:
       - name: Checkout code
@@ -94,19 +94,19 @@ jobs:
           draft: false
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') }}
           files: |
-            artifacts/InternetAnalogRadio-windows.exe/InternetAnalogRadio.exe
+            artifacts/InternetAnalogRadio-windows.zip/InternetAnalogRadio-windows.zip
           body: |
             ## Internet Analog Radio - Release ${{ steps.version.outputs.VERSION }}
-            
+
             Automated build from commit ${{ github.sha }}
-            
+
             ### Downloads
-            - **Windows**: InternetAnalogRadio-windows.exe
-            
+            - **Windows**: InternetAnalogRadio-windows.zip
+
             ### Installation
-            1. Download the executable
+            1. Download and extract the zip
             2. Make sure VLC Media Player is installed on your system
-            3. Run the executable
+            3. Run InternetAnalogRadio.exe from the extracted folder
             
             ### Requirements
             - VLC Media Player must be installed
