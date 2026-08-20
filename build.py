@@ -9,6 +9,9 @@ cytolk_path = os.path.dirname(cytolk.__file__)
 APP_NAME = 'InternetAnalogRadio'
 DIST_DIR = os.path.join('dist', APP_NAME)
 
+# Docs that go into the zip alongside the exe.
+DOCS = ['USER_GUIDE.md', 'CHANGELOG.md', 'LICENSE']
+
 # Define build arguments
 # NOTE: sounds are intentionally NOT passed via --add-data. The app loads
 # sounds from a relative "sounds" path next to the executable, so the
@@ -21,10 +24,14 @@ args = [
     f'--name={APP_NAME}',
     '--noconsole',  # Hidden by default, main.py allocates if needed
     '--clean',
+    '--noconfirm',  # Never stop to ask about wiping the old dist output
     # Add cytolk package data (includes DLLs usually)
     f'--add-data={cytolk_path}{os.pathsep}cytolk',
     # Hidden imports that might be missed
-    '--hidden-import=vlc',
+    '--hidden-import=av',
+    '--hidden-import=sounddevice',
+    '--hidden-import=_sounddevice_data',
+    '--hidden-import=numpy',
     '--hidden-import=cytolk',
     '--hidden-import=requests',
     '--hidden-import=pygame',
@@ -43,6 +50,15 @@ class Logger(object):
         self.log.write(message)
     def flush(self):
         self.log.flush()
+    # PyInstaller probes the stream before writing to it, so pass the
+    # questions through to the real stdout instead of blowing up.
+    def isatty(self):
+        return getattr(self.terminal, 'isatty', lambda: False)()
+    def fileno(self):
+        return self.terminal.fileno()
+    @property
+    def encoding(self):
+        return getattr(self.terminal, 'encoding', 'utf-8')
 
 sys.stdout = Logger()
 sys.stderr = sys.stdout
@@ -62,6 +78,16 @@ try:
         shutil.rmtree(dist_sounds_dir)
     shutil.copytree('sounds', dist_sounds_dir)
     print(f"Copied sounds directory to {dist_sounds_dir}")
+
+    # Ship the reader-facing docs beside the exe. README.md is deliberately
+    # left out: it documents running from source, which nobody downloading
+    # the zip is doing.
+    for doc in DOCS:
+        if os.path.exists(doc):
+            shutil.copy2(doc, os.path.join(DIST_DIR, doc))
+            print(f"Copied {doc} to {DIST_DIR}")
+        else:
+            print(f"WARNING: {doc} not found, not shipping it")
 
     # Zip up the onedir output for distribution.
     zip_base_name = os.path.join('dist', f'{APP_NAME}-windows')

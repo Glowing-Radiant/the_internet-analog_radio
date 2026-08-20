@@ -1,50 +1,43 @@
-import pygame
-import os
+from core.audio import get_engine
+from core.audio.noise import StaticSource
+
 
 class StaticGenerator:
+    """
+    Between-stations noise.
+
+    Same interface as before, but the noise is now generated live inside
+    the audio engine rather than looped through the pygame mixer. Because
+    it shares the engine's clock with the station audio, the crossfade
+    while tuning is sample accurate instead of two mixers guessing.
+    """
+
     def __init__(self):
-        try:
-            pygame.mixer.init()
-        except pygame.error:
-            pass # Might already be initialized
-            
-        self.sound = self._generate_white_noise()
-        self.channel = None
-        self.volume = 0.5
-        
-    def _generate_white_noise(self):
-        # Generate 1 second of white noise
-        duration = 1.0 
-        sample_rate = 44100
-        
-        # Use os.urandom which is standard library
-        # Generate random bytes
-        n_samples = int(duration * sample_rate)
-        buffer = os.urandom(n_samples)
-        
-        # Convert to numpy array for manipulation if we had numpy, but
-        # standard pygame can take raw bytes for Sound if formatted correctly.
-        # Actually simplest is just to use the raw bytes.
-        # 8-bit unsigned audio is 0-255. White noise is random values.
-        
-        return pygame.mixer.Sound(buffer=buffer)
+        self.engine = get_engine()
+        self.source = StaticSource(self.engine)
+        self.volume = 0.0
+        self._playing = False
 
     def play(self):
-        if not self.channel:
-            self.channel = self.sound.play(loops=-1) # Loop forever
-        
-        # Ensure it's playing
-        if self.channel and not self.channel.get_busy():
-             self.channel = self.sound.play(loops=-1)
-             
+        if not self._playing:
+            self.engine.add_source(self.source)
+            self._playing = True
         self.set_volume(self.volume)
 
     def set_volume(self, volume):
-        self.volume = max(0.0, min(1.0, volume))
-        if self.channel:
-            self.channel.set_volume(self.volume)
+        self.volume = max(0.0, min(1.0, float(volume)))
+        self.source.gain = self.volume
+
+    def set_detune(self, amount):
+        """
+        0.0 = locked onto a station, 1.0 = nothing there.
+        Drives the crackle density and the heterodyne whistle.
+        """
+        self.source.set_detune(amount)
 
     def stop(self):
-        if self.channel:
-            self.channel.stop()
-            self.channel = None
+        self.source.gain = 0.0
+        self.volume = 0.0
+        if self._playing:
+            self.engine.remove_source(self.source)
+            self._playing = False

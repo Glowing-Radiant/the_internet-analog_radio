@@ -1,4 +1,6 @@
 pygame
-python-vlc
+av
+sounddevice
+numpy
 requests
 cytolk

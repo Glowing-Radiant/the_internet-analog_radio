@@ -4,6 +4,10 @@
 
 The Internet Analog Radio is a minimalist, keyboard-driven radio player designed to simulate the tactile experience of tuning a physical receiver. It has a digital internet-station mode, a live analog KiwiSDR mode, static noise effects during tuning, a retro-style interface, and full screen reader accessibility.
 
+> **Just want to use the radio?** Read the [User Guide](USER_GUIDE.md) instead
+> — it ships inside the release zip. This README covers running from source
+> and is aimed at developers. Recent changes are in the [Changelog](CHANGELOG.md).
+
 ## Features
 
 *   **Digital Radio Mode**: Powered by the [Radio-Browser API](https://www.radio-browser.info/), giving access to thousands of internet stations worldwide through the existing analog-style dial.
@@ -36,10 +40,9 @@ The Internet Analog Radio is a minimalist, keyboard-driven radio player designed
 ## Requirements
 
 *   Python 3.8+
-*   **VLC Media Player**: Must be installed on your system (used for audio decoding).
-    *   Windows: [Download VLC](https://www.videolan.org/vlc/download-windows.html)
-    *   macOS: [Download VLC](https://www.videolan.org/vlc/download-macosx.html)
-    *   Linux: `sudo apt install vlc` (or equivalent)
+*   No external media player needed. Audio decoding (PyAV/FFmpeg), mixing and
+    output (sounddevice/PortAudio) ship as Python wheels installed by
+    `requirements.txt`.
 *   **Optional for Analog Radio**: A local clone or download of [jks-prv/kiwiclient](https://github.com/jks-prv/kiwiclient) with its dependencies installed.
 
 ## Installation

@@ -73,17 +73,15 @@ The build process:
 2. Sets up Python 3.11
 3. Installs dependencies from `requirements.txt`
 4. Installs PyInstaller
-5. Installs VLC (required for the application)
-6. Runs `build.py` to create the executable
-7. Uploads the executable as an artifact
+5. Runs `build.py` to create the executable
+6. Uploads the executable as an artifact
 
-### VLC Requirement
+### Audio Stack
 
-The application requires VLC Media Player to be installed on the user's system. The CI installs VLC during the build process:
-
-- **Linux**: `apt-get install vlc libvlc-dev`
-- **macOS**: `brew install --cask vlc`
-- **Windows**: VLC bindings are used via python-vlc
+There is no external media player dependency. Decoding uses PyAV (bundled
+FFmpeg libraries) and output uses sounddevice (bundled PortAudio); both are
+pip wheels, so nothing extra has to be installed on the build machine or on
+the user's system.
 
 ### Viewing Releases
 

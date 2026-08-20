@@ -3,6 +3,7 @@ import sys
 import os
 import random
 from core.static_generator import StaticGenerator
+from core.audio_presets import EFFECTS
 import threading
 from core.modes import (
     ALL_MODES,
@@ -62,7 +63,10 @@ class EventController:
 
         self.settings_panel_open = False
         self.settings_cursor = 0
-        self.settings_items = ['eq_enabled', 'eq_preset'] + [f'mode_{m}' for m in self.all_modes] + ['close']
+        self.settings_items = (['eq_enabled', 'eq_preset']
+                               + [f'fx_{name}' for name in EFFECTS]
+                               + [f'mode_{m}' for m in self.all_modes]
+                               + ['close'])
         self.settings = self._load_settings()
         self.modes = self._get_enabled_modes()
         if not self.modes:
@@ -446,7 +450,8 @@ class EventController:
                 # LOCKED - Perfect Signal
                 station_vol = 1.0
                 static_vol = 0.0
-                
+                self.static_generator.set_detune(0.0)
+
             elif distance < band_width:
                 # FADING - Linear Crossfade
                 # Normalize distance from 0.1 to band_width -> 0.0 to 1.0
@@ -458,7 +463,10 @@ class EventController:
                 norm = (distance - 0.1) / fade_range
                 station_vol = 1.0 - norm
                 static_vol = norm
-            
+                # Feeds the crackle density and the heterodyne whistle,
+                # so the noise itself tells you how close you are.
+                self.static_generator.set_detune(norm)
+
             else:
                 # Should not happen given outer if, but safety
                 station_vol = 0.0
@@ -474,6 +482,14 @@ class EventController:
                 final_station_vol = 0.0
                 final_static_vol = 0.0
             
+            # A locked station that has not actually come through yet used
+            # to leave the dial in dead silence. Keep the carrier hiss up
+            # until audio is really flowing, so tuning always sounds alive.
+            if current_station_url and not self.stream_player.is_playing():
+                if not self.is_muted:
+                    final_static_vol = max(final_static_vol,
+                                           self.user_volume * 0.15)
+
             if pygame.mixer.music.get_busy():
                  final_static_vol = 0.0
 
@@ -498,6 +514,7 @@ class EventController:
             # No station in range
             self.stream_player.stop()
             self._last_spoken_station = None
+            self.static_generator.set_detune(1.0)
             
             # NEW: Stop tracking when no station
             if self.history_manager:
@@ -1112,6 +1129,13 @@ class EventController:
             'equalizer': {
                 'enabled': False,
                 'preset': 'Flat'
+            },
+            # Engine enhancements. The volume leveler is on by default:
+            'effects': {
+                'warmth': False,
+                'leveler': True,
+                'width': False,
+                'space': False
             }
         }
         if not self.config_manager:
@@ -1121,10 +1145,16 @@ class EventController:
             return defaults
         loaded_modes = loaded.get('modes', {})
         loaded_eq = loaded.get('equalizer', {})
+        loaded_fx = loaded.get('effects', {})
         settings = {
             'modes': dict(defaults['modes']),
-            'equalizer': dict(defaults['equalizer'])
+            'equalizer': dict(defaults['equalizer']),
+            'effects': dict(defaults['effects'])
         }
+        if isinstance(loaded_fx, dict):
+            for name, value in loaded_fx.items():
+                if name in settings['effects']:
+                    settings['effects'][name] = bool(value)
         if isinstance(loaded_modes, dict):
             for loaded_mode, value in loaded_modes.items():
                 mode = normalize_mode(loaded_mode)
@@ -1156,6 +1186,9 @@ class EventController:
         elif not desired_enabled and self.audio_presets_manager.enabled:
             self.audio_presets_manager.toggle_equalizer(self.stream_player.player)
 
+        for name in EFFECTS:
+            self.audio_presets_manager.set_effect(name, self.settings['effects'].get(name, False))
+
     def _get_settings_ui_items(self):
         eq_enabled = "ON" if (self.audio_presets_manager and self.audio_presets_manager.enabled) else "OFF"
         preset = self.audio_presets_manager.current_preset_name if self.audio_presets_manager else "Flat"
@@ -1163,6 +1196,10 @@ class EventController:
             {'label': 'Equalizer', 'value': eq_enabled},
             {'label': 'EQ Preset', 'value': preset}
         ]
+        for name, label in EFFECTS.items():
+            status = "ON" if (self.audio_presets_manager
+                              and self.audio_presets_manager.is_effect_enabled(name)) else "OFF"
+            items.append({'label': label, 'value': status})
         for mode in self.all_modes:
             status = "ON" if self.settings['modes'].get(mode, False) else "OFF"
             items.append({'label': f"Mode: {mode_label(mode)}", 'value': status})
@@ -1219,6 +1256,15 @@ class EventController:
             self._cycle_audio_preset(direction)
             if self.audio_presets_manager:
                 self.settings['equalizer']['preset'] = self.audio_presets_manager.current_preset_name
+                self._save_settings()
+            self._announce_settings_item()
+            return
+
+        if item.startswith('fx_'):
+            name = item[len('fx_'):]
+            if self.audio_presets_manager:
+                enabled = self.audio_presets_manager.toggle_effect(name)
+                self.settings['effects'][name] = enabled
                 self._save_settings()
             self._announce_settings_item()
             return

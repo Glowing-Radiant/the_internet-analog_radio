@@ -274,7 +274,13 @@ class PygameRenderer:
         overlay.fill((0, 0, 0))
         self.screen.blit(overlay, (0, 0))
 
-        box_width, box_height = 520, 320
+        items = state.get('settings_items', [])
+        cursor = state.get('settings_cursor', 0)
+
+        # Grow the panel to fit however many rows there are, so adding
+        # settings does not push them out of the box.
+        box_width = 520
+        box_height = min(56 + max(len(items), 1) * 32 + 44, self.height - 20)
         box_x = (self.width - box_width) // 2
         box_y = (self.height - box_height) // 2
 
@@ -282,9 +288,6 @@ class PygameRenderer:
         pygame.draw.rect(self.screen, self.colors['accent'], (box_x, box_y, box_width, box_height), 2)
 
         self._draw_text("SETTINGS", self.font_medium, self.colors['accent'], (box_x + 20, box_y + 16))
-
-        items = state.get('settings_items', [])
-        cursor = state.get('settings_cursor', 0)
 
         row_y = box_y + 56
         for i, item in enumerate(items):

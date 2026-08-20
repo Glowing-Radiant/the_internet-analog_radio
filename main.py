@@ -78,8 +78,8 @@ def main():
     timer_manager = TimerManager()
     audio_presets_manager = AudioPresetsManager(config_manager)
     
-    # Initialize equalizer
-    audio_presets_manager.initialize_equalizer(stream_player.instance)
+    # Initialize equalizer on the audio engine
+    audio_presets_manager.initialize_equalizer(stream_player.engine)
     
     # 2. Initialize UI
     renderer = PygameRenderer()
@@ -98,7 +98,11 @@ def main():
     )
     
     # 4. Run
-    controller.run()
+    try:
+        controller.run()
+    finally:
+        from core.audio import shutdown_engine
+        shutdown_engine()
 
 if __name__ == "__main__":
     try:

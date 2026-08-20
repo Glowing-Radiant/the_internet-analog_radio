@@ -105,11 +105,11 @@ jobs:
 
             ### Installation
             1. Download and extract the zip
-            2. Make sure VLC Media Player is installed on your system
-            3. Run InternetAnalogRadio.exe from the extracted folder
+            2. Run InternetAnalogRadio.exe from the extracted folder
             
             ### Requirements
-            - VLC Media Player must be installed
-              - Windows: https://www.videolan.org/vlc/download-windows.html
+            - Nothing to install. Audio decoding and output are bundled.
             
-            For more information, see the [README](https://github.com/${{ github.repository }}/blob/main/README.md)
+            The zip includes USER_GUIDE.md and CHANGELOG.md. You can also read them here:
+            [User Guide](https://github.com/${{ github.repository }}/blob/main/USER_GUIDE.md) |
+            [What's New](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)
