@@ -27,4 +27,6 @@ prd.txt
 .radio/
 build_log.txt
 nvgt/
-the_internet_analog_radio_nvgt/
+the_internet_analog_radio_nvgt/
+# Downloaded separately by the user; see USER_GUIDE.md.
+kiwiclient/
